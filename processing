@@ -1,0 +1,73 @@
+#!/usr/bin/env python3
+
+import struct
+
+import matplotlib.pyplot as plt
+import numpy as np
+import seaborn as sns
+
+def _read_mat(f):
+	size = struct.unpack('2Q', f.read(8*2))
+	ret = np.fromfile(f, dtype='double', count=size[0]*size[1]).reshape(size)
+
+	return ret[0] if size[0] == 1 else ret
+
+class TrainData:
+	def __init__(self, filename):
+		with open(filename, "rb") as f:
+			self.num_samples, self.nlayers, self.ntargets = struct.unpack('3Q', f.read(8*3))
+			self.targets = struct.unpack(f'{self.ntargets}Q', f.read(8*self.ntargets))
+
+			print(self.num_samples)
+			print(self.nlayers)
+			print(self.ntargets)
+			print(self.targets)
+
+			self.delta_w_mags = []
+			for _ in range(self.nlayers-1):
+				self.delta_w_mags.append(_read_mat(f))
+
+			self.iters = _read_mat(f)
+
+			self.energies = []
+			for _ in range(self.num_samples):
+				self.energies.append(_read_mat(f))
+	
+	def plot_dw(self):
+		i = 0
+		for layer in self.delta_w_mags:
+			x = np.arange(0, len(layer))
+			sns.regplot(x=x, y=layer, marker='x', label=f"layer-{i}", scatter_kws={
+				's': 10,
+				'alpha': 0.2
+			})
+			i += 1
+		
+		plt.yscale('log')
+		plt.legend(loc='upper right')
+		plt.savefig('testimage.png')
+		plt.close()
+
+class TestData:
+	def __init__(self, filename):
+		with open(filename, "rb") as f:
+			self.num_samples, self.ntargets = struct.unpack('2Q', f.read(8*2))
+			self.targets = struct.unpack(f'{self.ntargets}Q', f.read(8*self.ntargets))
+			self.num_correct = struct.unpack('Q', f.read(8))[0]
+
+			self.confusion = _read_mat(f)
+			self.costs = []
+			for _ in range(self.ntargets):
+				self.costs.append(_read_mat(f))
+	
+	def trial(self):
+		print(self.num_correct)
+		print(self.num_samples)
+		print(self.confusion)
+
+if __name__ == '__main__':
+	# traindata = TrainData("testfile")
+	# traindata.plot_dw()
+
+	testdata = TestData("testfile")
+	testdata.trial()

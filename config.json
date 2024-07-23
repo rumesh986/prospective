@@ -1,0 +1,22 @@
+{
+	"mnist": {
+		"type": "number",
+		"processing": "normalized"
+	}, 
+	"network": {
+		"alpha": 0.01,
+		"gamma": 0.1,
+		"tau": 128,
+		"activation": "sigmoid",
+		"weights": "xavier_uniform",
+		"layers": [32, 32],
+		"targets": [1, 8]
+	},
+	"operations": {
+		"train": true,
+		"test": false
+	},
+	"training": {
+		"num_samples": 1000
+	}
+}
