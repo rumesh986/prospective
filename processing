@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 
 import struct
+import argparse
+import os
+from functools import reduce
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -12,16 +15,23 @@ def _read_mat(f):
 
 	return ret[0] if size[0] == 1 else ret
 
+def _get_latest_run():
+	folders = os.listdir('results')
+	paths = [os.path.join('results', basename) for basename in folders]
+	latest = max(paths, key=os.path.getctime)
+
+	return f'{latest}'
+
+def _get_network(folder):
+	return f'{folder}/{[x for x in os.listdir(folder) if "." not in x][0]}'
+
 class TrainData:
 	def __init__(self, filename):
+		self.dir, self.netname = filename.rsplit('/', 1)
+		self.netname = self.netname.split('.')[0]
 		with open(filename, "rb") as f:
 			self.num_samples, self.nlayers, self.ntargets = struct.unpack('3Q', f.read(8*3))
 			self.targets = struct.unpack(f'{self.ntargets}Q', f.read(8*self.ntargets))
-
-			print(self.num_samples)
-			print(self.nlayers)
-			print(self.ntargets)
-			print(self.targets)
 
 			self.delta_w_mags = []
 			for _ in range(self.nlayers-1):
@@ -32,6 +42,14 @@ class TrainData:
 			self.energies = []
 			for _ in range(self.num_samples):
 				self.energies.append(_read_mat(f))
+			
+			self.lenergies = []
+			for _ in range(self.num_samples):
+				sample = []
+				for _ in range(self.nlayers-1):
+					sample.append(_read_mat(f))
+				
+				self.lenergies.append(sample)
 	
 	def plot_dw(self):
 		i = 0
@@ -43,13 +61,73 @@ class TrainData:
 			})
 			i += 1
 		
+		plt.ylabel('Magnitude')
+		plt.xlabel('Training sample')
+		plt.title(f'Magnitude of weight changes {self.netname}')
 		plt.yscale('log')
 		plt.legend(loc='upper right')
-		plt.savefig('testimage.png')
+		plt.savefig(f'{self.dir}/delta_w_mags.png')
 		plt.close()
+	
+	def plot_iters(self):
+		plt.plot(self.iters)
+
+		plt.ylabel("Number of iterations")
+		plt.xlabel('Training sample')
+		plt.title(f'Number of iterations {self.netname}')
+
+		plt.savefig(f'{self.dir}/iters.png')
+		plt.close()
+	
+	def plot_energies(self):
+		for i in range(self.num_samples):
+			filtered = [x for x in self.energies[i] if x != 0]
+			plt.semilogy(filtered)
+		
+		plt.ylabel('Energy')
+		plt.xlabel('iteration')
+		plt.title(f'Energy across iterations {self.netname}')
+		
+		plt.savefig(f'{self.dir}/energies.png')
+		plt.close()
+
+	def plot_lenergies(self):
+		colors = ['black', 'blue', 'red', 'green', 'yellow', 'orange', 'pink', 'brown', 'cyan', 'magenta']
+		allzero_cnt = 0
+		for sample in self.lenergies:
+			for i in range(self.nlayers-1):
+				filtered = [x for x in sample[i] if x != 0]
+				plt.semilogy(filtered, c=colors[i], label=f"{i}")
+			
+			if (not any(sample[-1])):
+				allzero_cnt += 1
+
+		print(f"{allzero_cnt}/{self.num_samples} have zero final layers")		
+		plt.legend()
+		plt.savefig(f'{self.dir}/lenergies.png')
+		plt.close()
+	
+	def plot_energy_diff(self):
+		for sample in self.lenergies:
+			hidden = [np.array(x) for x in sample[:-1]]
+			final = sample[-1] - reduce(lambda a,b: a +b, hidden)
+			plt.semilogy([x for x in final if x != 0])
+		
+		plt.savefig(f'{self.dir}/energy_diff.png')
+		plt.close()
+
+
+	def plot_all(self):
+		self.plot_dw()
+		self.plot_iters()
+		self.plot_energies()
+		self.plot_lenergies()
+		self.plot_energy_diff()
 
 class TestData:
 	def __init__(self, filename):
+		self.dir, self.netname = filename.rsplit('/', 1)
+		self.netname = self.netname.split('.')[0]
 		with open(filename, "rb") as f:
 			self.num_samples, self.ntargets = struct.unpack('2Q', f.read(8*2))
 			self.targets = struct.unpack(f'{self.ntargets}Q', f.read(8*self.ntargets))
@@ -59,15 +137,109 @@ class TestData:
 			self.costs = []
 			for _ in range(self.ntargets):
 				self.costs.append(_read_mat(f))
+			
+			self.labels = _read_mat(f)
+
+			self.outputs = []
+			for _ in range(self.num_samples):
+				self.outputs.append(_read_mat(f))
 	
+	def plot_costs(self):
+		for i in range(self.ntargets):
+			plt.plot(self.costs[i])
+		
+		plt.ylabel("Cost")
+		plt.xlabel("testing sample")
+		plt.title(f"final cost during testing {self.netname}")
+		plt.savefig(f'{self.dir}/costs.png')
+
+		plt.close()
+	
+	def plot_preds(self):
+		false = self.num_samples - self.num_correct
+		
+		fig, (pie_axis, tbl_axis) = plt.subplots(1, 2, figsize=(10,5))
+
+		pie_axis.pie([self.num_correct, false], labels=[f"correct: {self.num_correct}", f"false: {false}"])
+
+		table = [
+			["total", self.num_samples],
+			["Accuracy", self.num_correct/self.num_samples],
+			["", ""],
+			# ["predictions"]
+		]
+
+		tbl_axis.axis("off")
+		tbl_axis.table(table, loc='center')
+
+		plt.title(f"Prediction stats {self.netname}")
+		plt.savefig(f"{self.dir}/preds.png")
+		plt.close()
+	
+	def plot_outputs(self):
+		colors = ['black', 'blue', 'red', 'green', 'yellow', 'orange', 'pink', 'brown', 'cyan', 'magenta']
+		for i in range(self.num_samples):
+			target_i = self.targets.index(self.labels[i])
+			plt.scatter(range(self.ntargets), self.outputs[i], c=colors[target_i % self.ntargets])
+		
+		plt.legend([f"{self.targets[i]}" for i in range(self.ntargets)])
+		plt.ylabel("neuron value")
+		plt.xlabel("neuron")
+		plt.title(f"Output vectors {self.netname}")
+		# plt.legend()
+		plt.savefig(f"{self.dir}/outputs.png")
+		plt.close()
+	
+	# def plot_outputs2(self):
+	# 	print(self.num_samples)
+	# 	print(self.ntargets)
+	# 	mat = np.ndarray(shape=(self.ntargets, self.num_samples))
+	# 	# mat = np.concatenate(self.outputs, axis=1)
+	# 	# print(mat)
+	# 	for i in range(self.num_samples):
+	# 		mat[i] = self.outputs[i]
+
+	# 	fig, ax = plt.subplots(1, subplot_kw={'projection': '3d'})
+	# 	ax.plot_surface(range(self.ntargets), range(self.num_samples), mat)
+	# 	plt.savefig(f"{self.dir}/output_surf.png")
+	# 	plt.close()
+
+	def print_outputs(self):
+		for i in range(self.num_samples):
+			print(f"[{self.labels[i]}]: {self.outputs[i]}")
+
+
+	def plot_all(self):
+		self.plot_costs()
+		self.plot_preds()
+		self.plot_outputs()
+
 	def trial(self):
 		print(self.num_correct)
 		print(self.num_samples)
 		print(self.confusion)
 
 if __name__ == '__main__':
+	parser = argparse.ArgumentParser()
+	# parser.add_argument("net")
+	parser.add_argument('-f', '--folder')
+	args = parser.parse_args()
+
+	if not args.folder:
+		args.folder = _get_latest_run()
+
+	network = _get_network(args.folder)
+
+	traindata = TrainData(f"{network}.traindata")
+	traindata.plot_all()	
+
+	testdata = TestData(f"{network}.testdata")
+	testdata.plot_all()
+	# testdata.plot_outputs2()
+	# testdata.print_outputs()	
+
 	# traindata = TrainData("testfile")
 	# traindata.plot_dw()
 
-	testdata = TestData("testfile")
-	testdata.trial()
+	# testdata = TestData("testfile")
+	# testdata.trial()
