@@ -19,10 +19,18 @@ struct net_params {
 	size_t *targets; // must be alloc'd
 };
 
+struct lenergy {
+	size_t layer;
+	gsl_vector *epsilon;
+};
+
 struct traindata {
 	gsl_vector **delta_w_mags;
 	gsl_vector *iter_counts;
 	gsl_vector **energies;
+
+	// struct lenergy *lenergies;
+	gsl_vector ***lenergies;
 
 	size_t num_samples;
 };
@@ -30,6 +38,9 @@ struct traindata {
 struct testdata {
 	gsl_matrix *confusion;
 	gsl_vector **costs;
+
+	gsl_vector *labels;
+	gsl_vector **outputs;
 
 	size_t num_correct;
 	size_t num_samples;

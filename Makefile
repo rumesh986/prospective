@@ -22,11 +22,15 @@ O_FILES = $(O_FILE) utils.o mnist.o network.o network_utils.o config.o
 $(FILE_BASE_NAME): $(O_FILES)
 	$(CC) -o $(FILE_BASE_NAME) $(O_FILES) $(LDLIBS)
 
-.PHONY: build run gdb valgrind clean rebuild
+.PHONY: build run default gdb valgrind clean rebuild
 build: $(FILE_BASE_NAME)
 
 run: build
 	./$(FILE_BASE_NAME) $(INPUT)
+
+default: build
+	./$(FILE_BASE_NAME) -c config.json -s
+	./processing
 
 gdb: build
 	gdb ./$(FILE_BASE_NAME)

@@ -74,7 +74,7 @@ int main(int argc, char **argv) {
 		if (test_results) {
 			char testfile[512];
 			sprintf(testfile, "%s/%s.testdata", results_dir, config.net_name);
-			save_testdata(test_results, "testfile");
+			save_testdata(test_results, testfile);
 			free_testdata(test_results);
 		}
 

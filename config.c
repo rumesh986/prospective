@@ -228,7 +228,6 @@ void save_config(struct config config, char *filename) {
 
 	fwrite(print, 1, strlen(print), file);
 
-	printf("%s\n", print);
 	free(print);
 	cJSON_Delete(final);
 	fclose(file);
