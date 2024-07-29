@@ -2,6 +2,7 @@
 #define __UTILS_H__
 
 void print_vec(gsl_vector *vec, char *title, bool print_index);
+void print_img(gsl_vector *vec, char *title);
 
 gsl_vector *vec_ops(gsl_vector *inp, double(*op)(double));
 

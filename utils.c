@@ -20,6 +20,21 @@ void print_vec(gsl_vector *vec, char *title, bool print_index) {
 	printf("|\n");
 }
 
+void print_img(gsl_vector *vec, char *title) {
+	printf("########### %s ###########\n", title);
+	for (int i = 0; i < 28; i++) {
+		for (int j = 0; j < 28; j++) {
+			double val = gsl_vector_get(vec, 28*i + j);
+			printf("%s", val == 0.0 ? " " : ".");
+			// if (val == 0.0)
+			// 	printf("    ");
+			// else
+			// 	printf("%.3f ", val);
+		}
+		printf("\n");
+	}
+}
+
 gsl_vector *vec_ops(gsl_vector *inp, double(*op)(double)) {
 	gsl_vector *ret = gsl_vector_calloc(inp->size);
 	for (int i = 0; i < inp->size; i++)

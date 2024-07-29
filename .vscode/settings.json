@@ -3,6 +3,7 @@
 		"dirent.h": "c",
 		"getopt.h": "c",
 		"all.h": "c",
-		"limits": "c"
+		"limits": "c",
+		"gsl_matrix.h": "c"
 	}
 }

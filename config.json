@@ -4,19 +4,26 @@
 		"processing": "normalized"
 	}, 
 	"network": {
-		"alpha": 0.01,
+		"alpha": 0.1,
 		"gamma": 0.1,
 		"tau": 128,
 		"activation": "sigmoid",
 		"weights": "xavier_uniform",
 		"layers": [32, 32],
-		"targets": [1, 8]
+		"targets": [0, 8]
 	},
 	"operations": {
 		"train": true,
 		"test": true
 	},
 	"training": {
-		"num_samples": 100
+		"num_samples": 1000,
+		"seed": 0,
+		"gamma_rate": 0.5,
+		"test_samples": 200,
+		"early_stop": {
+			"gamma_count": 2,
+			"energy_residual": 1e-9
+		}
 	}
 }

@@ -25,7 +25,7 @@ void weight_init(struct net_params params, gsl_matrix *mat) {
 		// case weights_xavier_normal:		_xavier_normal(mat);		break;
 		case weights_xavier_uniform:	_xavier_uniform(mat);		break;
 		default:
-			printf("Invalid weight initializer provided, setting to -1.0\n");
+			printf("Invalid weight initializer provided (%d), setting to -1.0\n", params.weights);
 			gsl_matrix_set_all(mat, -1.0);
 	}
 }

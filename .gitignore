@@ -1,4 +1,6 @@
 results/*
+results_old/*
+tests/*
 
 *.o
 

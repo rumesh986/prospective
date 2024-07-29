@@ -5,8 +5,8 @@ struct net_params {
 	mnist_db mnist;
 	mnist_processing mnist_proc;
 
-	double gamma;
 	double alpha;
+	double gamma;
 	
 	size_t tau;
 	enum activation act;
@@ -17,6 +17,16 @@ struct net_params {
 
 	size_t ntargets;
 	size_t *targets; // must be alloc'd
+};
+
+struct training_params {
+	size_t num_samples;
+	size_t seed;
+
+	double gamma_rate;
+	size_t gamma_count;
+
+	double energy_res;
 };
 
 struct lenergy {
@@ -31,6 +41,7 @@ struct traindata {
 
 	// struct lenergy *lenergies;
 	gsl_vector ***lenergies;
+	gsl_vector *test_costs;
 
 	size_t num_samples;
 };
@@ -51,7 +62,7 @@ struct net_params *load_network(char *filename);
 int save_network(char *filename);
 void free_network();
 
-struct traindata *train(size_t num_samples);
+struct traindata *train(struct training_params train_params);
 int save_traindata(struct traindata *data, char *filename);
 void free_traindata(struct traindata *data);
 

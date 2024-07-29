@@ -24,7 +24,7 @@ int main(int argc, char **argv) {
 				config_read = true;
 				break;
 			case 'n':
-				config.params = *load_network(optarg);
+				config.net_params = *load_network(optarg);
 				config.should_test = true;
 				config.should_train = false;
 				break;
@@ -45,12 +45,18 @@ int main(int argc, char **argv) {
 	strftime(results_dir, 256, "./results/%d-%m-%y_%H:%M:%S", cur_tm);
 	mkdir(results_dir, 0700);
 
-	load_mnist(config.params.mnist);
+	// if seed not provided or equal to zero, seed with current time
+	if (config.train_params.seed == 0)
+		config.train_params.seed = cur_time;
+
+	srand(config.train_params.seed);
+
+	load_mnist(config.net_params.mnist);
 
 	if (config.should_train) {
-		build_network(mnist_get_input_length(), config.params.ntargets, &config.params);
+		build_network(mnist_get_input_length(), config.net_params.ntargets, &config.net_params);
 
-		struct traindata *train_results = train(config.num_samples);
+		struct traindata *train_results = train(config.train_params);
 		if (train_results) {
 			char trainfile[512];
 			sprintf(trainfile, "%s/%s.traindata", results_dir, config.net_name);
@@ -64,7 +70,7 @@ int main(int argc, char **argv) {
 			sprintf(netname, "%s/%s", results_dir, config.net_name);
 			save_network(netname);
 			strcat(netname, ".json");
-			save_config(config, netname);
+			save_config(netname);
 		}
 	}
 
@@ -82,5 +88,6 @@ int main(int argc, char **argv) {
 
 	free_mnist();
 	free_network();
+	free_config();
 	free(config.net_name);
 }

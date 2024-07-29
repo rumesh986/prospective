@@ -4,6 +4,8 @@ import struct
 import argparse
 import os
 from functools import reduce
+import warnings
+
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -50,6 +52,8 @@ class TrainData:
 					sample.append(_read_mat(f))
 				
 				self.lenergies.append(sample)
+			
+			self.test_costs = _read_mat(f)
 	
 	def plot_dw(self):
 		i = 0
@@ -70,7 +74,7 @@ class TrainData:
 		plt.close()
 	
 	def plot_iters(self):
-		plt.plot(self.iters)
+		plt.scatter(range(len(self.iters)), self.iters)
 
 		plt.ylabel("Number of iterations")
 		plt.xlabel('Training sample')
@@ -102,11 +106,11 @@ class TrainData:
 			if (not any(sample[-1])):
 				allzero_cnt += 1
 
-		print(f"{allzero_cnt}/{self.num_samples} have zero final layers")		
+		# print(f"{allzero_cnt}/{self.num_samples} have zero final layers")		
 		plt.legend()
 		plt.savefig(f'{self.dir}/lenergies.png')
 		plt.close()
-	
+
 	def plot_energy_diff(self):
 		for sample in self.lenergies:
 			hidden = [np.array(x) for x in sample[:-1]]
@@ -116,13 +120,111 @@ class TrainData:
 		plt.savefig(f'{self.dir}/energy_diff.png')
 		plt.close()
 
+	def plot_energy_ratio(self):
+		for sample in self.lenergies:
+			ratio = []
+
+			layers = np.array([np.array(x) for x in sample])
+			total = layers.sum(axis=0)
+			with warnings.catch_warnings(record=True) as w:
+				ratio = layers[-1] / total
+				if len(w) > 0:
+					pass
+					# print(f"layers[-1]: {layers[-1]}")
+					# print(f"total: {total}")
+					# print(f"ratio: {ratio}")
+
+			plt.plot(ratio)
+		
+		plt.xlabel("Iteration")
+		plt.title(f"Ratio of final layer energy over total energy {self.netname}")
+
+		plt.savefig(f"{self.dir}/final_layer_energy_ratio.png")
+		plt.close()
+	
+	def plot_final_layer_energies(self):
+		for sample in self.lenergies:
+			plt.plot(sample[-1])
+		
+		plt.xlabel("Iterations")
+		plt.ylabel("Energy")
+		plt.title(f"Final layer energies {self.netname}")
+		plt.savefig(f"{self.dir}/final_layer_energies.png")
+		plt.close()
+
+	def plot_test_costs(self):
+		plt.semilogy(self.test_costs)
+
+		plt.xlabel("Training sample")
+		plt.ylabel("Cost")
+		plt.title(f"Cost of model across training {self.netname}")
+
+		plt.savefig(f'{self.dir}/test_costs.png')
+		plt.close()
+
+	def plot_residual(self):
+		for sample in self.energies:
+			with warnings.catch_warnings(record=True) as w:
+				res = [sample[i] - sample[i+1] for i in range(len(sample)-1)]
+				if len(w) > 0:
+					for i in range(len(sample)-1):
+						print(f"sample[{i}] = {sample[i]}")
+					return
+			res2 = [x for x in res if x != 0]
+			# print(res)
+			plt.semilogy(res2)
+		
+		plt.ylabel('\Delta energy')
+		plt.xlabel('iteration')
+		plt.title(f'\Delta Energy across iterations {self.netname}')
+		
+		plt.savefig(f'{self.dir}/delta_energies.png')
+		plt.close()
+
 
 	def plot_all(self):
 		self.plot_dw()
 		self.plot_iters()
-		self.plot_energies()
+		# self.plot_energies()
+		# self.plot_energy_diff()
+		self.plot_test_costs()
+		self.plot_energy_ratio()
+		self.plot_final_layer_energies()
 		self.plot_lenergies()
-		self.plot_energy_diff()
+		self.plot_residual()
+
+	def trial(self):
+		increasing_regimes = []
+		ingroup = False
+		for i in range(len(self.test_costs)):
+			if self.test_costs[i] > self.test_costs[i-1]:
+				if ingroup:
+					increasing_regimes[-1].append(i)
+				else:
+					increasing_regimes.append([i])
+					ingroup = True
+			else:
+				ingroup = False
+				# print(f"Increasing cost at {i} ({self.test_costs[i-1]} -> {self.test_costs[i]})")
+		# print(increasing_regimes)
+		increasing_regimes = increasing_regimes[1:]
+		for i in increasing_regimes:
+			print(f"Range: {min(i)} -> {max(i)}")
+		
+		plt.semilogy(self.test_costs, label="Test costs")
+		i = 0
+		for layer in self.delta_w_mags:
+			plt.semilogy(layer * 100000, label=f"layer {i} dw")
+			i += 1
+		
+		plt.legend()
+		plt.xlabel("Training sample")
+		plt.ylabel("Cost/Magnitude")
+		plt.title("Rescaled delta weights with training costs")
+		
+		plt.savefig("trial.png")
+		plt.close()
+				
 
 class TestData:
 	def __init__(self, filename):
@@ -231,11 +333,15 @@ if __name__ == '__main__':
 	network = _get_network(args.folder)
 
 	traindata = TrainData(f"{network}.traindata")
-	traindata.plot_all()	
+	# traindata.trial()
+	traindata.plot_all()
+	# traindata.plot_final_layer_energies()
+	# traindata.plot_energies()
+	# traindata.plot_residual()
 
 	testdata = TestData(f"{network}.testdata")
 	testdata.plot_all()
-	# testdata.plot_outputs2()
+	# # testdata.plot_outputs2()
 	# testdata.print_outputs()	
 
 	# traindata = TrainData("testfile")

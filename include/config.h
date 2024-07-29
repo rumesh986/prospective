@@ -4,17 +4,17 @@
 // extern struct net_params params;
 
 struct config {
-	struct net_params params;
+	struct net_params net_params;
+	struct training_params train_params;
 
 	char *net_name;
 	bool should_train;
 	bool should_test;
-
-	size_t num_samples;
 };
 
 struct config parse_config(char *filename);
-void save_config(struct config config, char *filename);
+void save_config(char *filename);
+void free_config();
 void print_config(struct config config);
 
 #endif
