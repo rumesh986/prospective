@@ -7,8 +7,6 @@
 #include <cjson/cJSON.h>
 
 #include "include/all.h"
-// #include "include/network.h"
-// #include "include/mnist.h"
 #include "include/config.h"
 
 // local header
@@ -18,7 +16,8 @@
 enum dtype {
 	int_t,
 	size_tt,
-	double_tt
+	double_tt,
+	bool_tt
 };
 
 struct config_option {
@@ -38,7 +37,6 @@ void set_val(cJSON *main_config, char *key, void *setting, void * default_val, e
 struct config parse_config(char *filename) {
 	_config = _parse_file(filename);
 	
-	// struct net_params *ret = malloc(sizeof(struct net_params));
 	struct config ret;
 
 	cJSON *mnist_configs = cJSON_GetObjectItem(_config, "mnist");
@@ -46,7 +44,9 @@ struct config parse_config(char *filename) {
 	cJSON *oper_configs = cJSON_GetObjectItem(_config, "operations");
 	cJSON *train_configs = cJSON_GetObjectItem(_config, "training");
 	cJSON *early_stop_configs = cJSON_GetObjectItem(train_configs, "early_stop");
+	cJSON *test_configs = cJSON_GetObjectItem(_config, "testing");
 	cJSON *name_config = cJSON_GetObjectItem(_config, "name");
+
 
 	struct config_option mnist_options[2] = {
 		{"number", mnist_numbers},
@@ -120,11 +120,16 @@ struct config parse_config(char *filename) {
 	set_val(train_configs, "num_samples", &ret.train_params.num_samples, &(size_t){0}, size_tt);
 	set_val(train_configs, "seed", &ret.train_params.seed, &(size_t){0}, size_tt);
 	set_val(train_configs, "gamma_rate", &ret.train_params.gamma_rate, &(double){0}, double_tt);
+	set_val(train_configs, "test_samples", &ret.train_params.test_samples, &(size_t){0}, size_tt);
+	set_val(train_configs, "logging", &ret.train_params.logging, &(bool){true}, bool_tt);
 
 	if (early_stop_configs) {
 		set_val(early_stop_configs, "gamma_count", &ret.train_params.gamma_count, &(size_t){0}, size_tt);
 		set_val(early_stop_configs, "energy_residual", &ret.train_params.energy_res, &(double){0}, double_tt);
 	}
+
+	set_val(test_configs, "num_samples", &ret.test_params.num_samples, &(size_t){0}, size_tt);
+	set_val(test_configs, "logging", &ret.test_params.logging, &(bool){true}, bool_tt);
 
 	if (name_config) {
 		// char *namestr = name_config->valuestring;
@@ -287,6 +292,8 @@ void set_val(cJSON *main_config, char *key, void *setting, void * default_val, e
 		} else if (type == double_tt) {
 			printf("[Config] %s not specified, defaulting to %f\n", key, *(double *)default_val);
 			*(double *)setting = *(double *)default_val;
+		} else if (type == bool_tt) {
+			printf("[Config] %s not specified, defaulting to %s\n", key, *(bool *)default_val ? "true" : "false");
 		} else {
 			printf("[Config] %s not specified, invalid type provided, unable to set default value\n", key);
 			return;
@@ -296,101 +303,12 @@ void set_val(cJSON *main_config, char *key, void *setting, void * default_val, e
 			*(int *)setting = config->valueint;
 		else if (type == size_tt)
 			*(size_t *)setting = (size_t)config->valueint;
-		else if (double_tt)
+		else if (type == double_tt)
 			*(double *)setting = config->valuedouble;
+		else if (type == bool_tt)
+			*(bool *)setting = cJSON_IsTrue(config);
 		else {
 			printf("Invalid command specify type\n");
 		}
 	}
-}
-
-void save_config_old(struct config config, char *filename) {
-	cJSON *final = cJSON_CreateObject();
-	cJSON *mnist = cJSON_CreateObject();
-	cJSON *net = cJSON_CreateObject();
-	cJSON *operations = cJSON_CreateObject();
-	cJSON *training = cJSON_CreateObject();
-	cJSON *early_stop = cJSON_CreateObject();
-
-	char str[128];
-	switch (config.net_params.mnist) {
-		case mnist_numbers: strcpy(str, "number");	break;
-		case mnist_fashion:	strcpy(str, "fashion");	break;
-	}
-	cJSON_AddStringToObject(mnist, "type", str);
-
-	switch (config.net_params.mnist_proc) {
-		case mnist_original: 	strcpy(str, "original");	break;
-		case mnist_normalized:	strcpy(str, "normalized");	break;
-		case mnist_binarised:	strcpy(str, "binarised");	break;
-	}
-	cJSON_AddStringToObject(mnist, "processing", str);
-
-	cJSON_AddItemToObject(final, "mnist", mnist);
-
-	cJSON_AddNumberToObject(net, "alpha", config.net_params.alpha);
-	cJSON_AddNumberToObject(net, "gamma", config.net_params.gamma);
-	cJSON_AddNumberToObject(net, "tau", config.net_params.tau);
-
-	switch (config.net_params.act) {
-		case act_linear: 	strcpy(str, "linear");	break;
-		case act_sigmoid:	strcpy(str, "sigmoid");	break;
-		case act_relu:	strcpy(str, "relu");	break;
-	}
-	cJSON_AddStringToObject(net, "activation", str);
-
-	switch (config.net_params.weights) {
-		case weights_zero:				strcpy(str, "zero");			break;
-		case weights_one:				strcpy(str, "one");				break;
-		case weights_xavier_normal:		strcpy(str, "xavier_normal");	break;
-		case weights_xavier_uniform:	strcpy(str, "xavier_uniform");	break;
-	}
-	cJSON_AddStringToObject(net, "weights", str);
-
-	cJSON *layers = cJSON_AddArrayToObject(net, "layers");
-	for (int i = 0; i < config.net_params.nlayers; i++) {
-		cJSON *temp = cJSON_CreateNumber(config.net_params.lengths[i]);
-		cJSON_AddItemToArray(layers, temp);
-	}
-
-	cJSON *targets = cJSON_AddArrayToObject(net, "targets");
-	for (int i = 0; i < config.net_params.ntargets; i++) {
-		cJSON *temp = cJSON_CreateNumber(config.net_params.targets[i]);
-		cJSON_AddItemToArray(targets, temp);
-	}
-
-	cJSON_AddItemToObject(final, "network", net);
-
-	cJSON_AddBoolToObject(operations, "train", config.should_train);
-	cJSON_AddBoolToObject(operations, "test", config.should_test);
-
-	cJSON_AddItemToObject(final, "operations", operations);
-
-	cJSON_AddNumberToObject(training, "num_samples", config.train_params.num_samples);
-	cJSON_AddNumberToObject(training, "seed", config.train_params.seed);
-	cJSON_AddNumberToObject(training, "gamma_rate", config.train_params.gamma_rate);
-	
-	cJSON_AddNumberToObject(early_stop, "gamma_count", config.train_params.gamma_count);
-	cJSON_AddNumberToObject(early_stop, "energy_residual", config.train_params.energy_res);
-	cJSON_AddItemToObject(training, "early_stop", early_stop);
-	
-	cJSON_AddItemToObject(final, "training", training);
-
-
-	// cJSON *namestr = cJSON_CreateString(config.net_name);
-	// cJSON_AddItemToObject(final, "name", namestr);
-	cJSON_AddStringToObject(final, "name", config.net_name);
-
-	char *print = cJSON_Print(final);
-	FILE *file = fopen(filename, "w");
-	if (!file) {
-		printf("[Config] Error failed to open file to save config (%s)\n", filename);
-		return;
-	} 
-
-	fwrite(print, 1, strlen(print), file);
-
-	free(print);
-	cJSON_Delete(final);
-	fclose(file);
 }
