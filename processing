@@ -17,6 +17,19 @@ def _read_mat(f):
 
 	return ret[0] if size[0] == 1 else ret
 
+def _read_file(f, data_dict):
+	start_pos = f.tell()
+	f.seek(2, 0)
+	end_pos = f.tell()
+	f.seek(start_pos)
+
+	while f.tell() != end_pos:
+		data = struct.unpack('3Q', f.read(8*3))
+		if data[0] not in data_dict.keys():
+			data_dict[data[0]] = []
+
+		data_dict[data[0]].append(np.fromfile(f, dtype='double', count=data[1]*data[2]).reshape([data[1], data[2]]))
+
 def _get_latest_run():
 	folders = os.listdir('results')
 	paths = [os.path.join('results', basename) for basename in folders]
@@ -27,12 +40,41 @@ def _get_latest_run():
 def _get_network(folder):
 	return f'{folder}/{[x for x in os.listdir(folder) if "." not in x][0]}'
 
+SAVE_NETWORK			= 0x01
+SAVE_TRAIN				= 0x02
+SAVE_TEST				= 0x03
+SAVE_NET_WEIGHTS		= 0x11
+SAVE_NET_TARGETS		= 0x12
+SAVE_TRAIN_DELTA_WMAGS	= 0x21
+SAVE_TRAIN_ITER_COUNTS	= 0x22
+SAVE_TRAIN_ENERGIES		= 0x23
+SAVE_TRAIN_LENERGIES	= 0x24
+SAVE_TRAIN_TRAINCOSTS	= 0x25
+SAVE_TEST_LABELS		= 0x31
+SAVE_TEST_PREDICTIONS	= 0x32
+SAVE_TEST_OUTPUTS		= 0x33
+SAVE_TEST_COSTS			= 0x34
+
 class TrainData:
 	def __init__(self, filename):
 		self.dir, self.netname = filename.rsplit('/', 1)
 		self.netname = self.netname.split('.')[0]
 		with open(filename, "rb") as f:
-			self.num_samples, self.nlayers, self.ntargets = struct.unpack('3Q', f.read(8*3))
+			self.filetype, self.num_samples, self.nlayers, self.ntargets = struct.unpack('4Q', f.read(8*4))
+			if self.filetype != SAVE_TRAIN:
+				print("ERROR: Invalid file (possibly too old)")
+				exit(1)
+
+			# data_dict = {
+			# 	SAVE_NET_TARGETS: self.targets,
+			# 	SAVE_TRAIN_DELTA_WMAGS: self.delta_w_mags,
+			# 	SAVE_TRAIN_ITER_COUNTS: self.iters,
+			# 	SAVE_TRAIN_ENERGIES: self.energies,
+			# 	SAVE_TRAIN_LENERGIES: self.lenergies,
+
+			# }
+
+
 			self.targets = struct.unpack(f'{self.ntargets}Q', f.read(8*self.ntargets))
 
 			self.delta_w_mags = []
@@ -74,7 +116,12 @@ class TrainData:
 		plt.close()
 	
 	def plot_iters(self):
-		plt.scatter(range(len(self.iters)), self.iters)
+		# plt.scatter(range(len(self.iters)), self.iters)
+		sns.regplot(x=np.arange(len(self.iters)), y=self.iters, marker='x', scatter_kws={
+			's': 10,
+			'alpha': 0.5
+		})
+		
 
 		plt.ylabel("Number of iterations")
 		plt.xlabel('Training sample')
@@ -144,7 +191,8 @@ class TrainData:
 	
 	def plot_final_layer_energies(self):
 		for sample in self.lenergies:
-			plt.plot(sample[-1])
+			sample2 = [x for x in sample[-1] if x != 0]
+			plt.plot(sample2)
 		
 		plt.xlabel("Iterations")
 		plt.ylabel("Energy")
@@ -153,7 +201,7 @@ class TrainData:
 		plt.close()
 
 	def plot_test_costs(self):
-		plt.semilogy(self.test_costs)
+		plt.plot(self.test_costs)
 
 		plt.xlabel("Training sample")
 		plt.ylabel("Cost")
@@ -164,12 +212,8 @@ class TrainData:
 
 	def plot_residual(self):
 		for sample in self.energies:
-			with warnings.catch_warnings(record=True) as w:
-				res = [sample[i] - sample[i+1] for i in range(len(sample)-1)]
-				if len(w) > 0:
-					for i in range(len(sample)-1):
-						print(f"sample[{i}] = {sample[i]}")
-					return
+			sample2 = [x for x in sample if x != 0]
+			res = [sample[i] - sample[i+1] for i in range(len(sample2)-1)]
 			res2 = [x for x in res if x != 0]
 			# print(res)
 			plt.semilogy(res2)
@@ -185,7 +229,7 @@ class TrainData:
 	def plot_all(self):
 		self.plot_dw()
 		self.plot_iters()
-		# self.plot_energies()
+		self.plot_energies()
 		# self.plot_energy_diff()
 		self.plot_test_costs()
 		self.plot_energy_ratio()
@@ -231,16 +275,17 @@ class TestData:
 		self.dir, self.netname = filename.rsplit('/', 1)
 		self.netname = self.netname.split('.')[0]
 		with open(filename, "rb") as f:
-			self.num_samples, self.ntargets = struct.unpack('2Q', f.read(8*2))
+			self.filetype, self.num_samples, self.ntargets = struct.unpack('3Q', f.read(8*3))
 			self.targets = struct.unpack(f'{self.ntargets}Q', f.read(8*self.ntargets))
 			self.num_correct = struct.unpack('Q', f.read(8))[0]
 
-			self.confusion = _read_mat(f)
+			# self.confusion = _read_mat(f)
+			self.labels = _read_mat(f)
+			self.predictions = _read_mat(f)
+
 			self.costs = []
 			for _ in range(self.ntargets):
 				self.costs.append(_read_mat(f))
-			
-			self.labels = _read_mat(f)
 
 			self.outputs = []
 			for _ in range(self.num_samples):

@@ -10,20 +10,25 @@
 		"activation": "sigmoid",
 		"weights": "xavier_uniform",
 		"layers": [32, 32],
-		"targets": [0, 8]
+		"targets": [1, 8]
 	},
 	"operations": {
 		"train": true,
 		"test": true
 	},
 	"training": {
-		"num_samples": 1000,
+		"num_samples": 10,
 		"seed": 0,
 		"gamma_rate": 0.5,
-		"test_samples": 200,
+		"test_samples": 10,
+		"logging": true,
 		"early_stop": {
 			"gamma_count": 2,
 			"energy_residual": 1e-9
 		}
+	},
+	"testing": {
+		"num_samples": 10,
+		"logging": true
 	}
 }

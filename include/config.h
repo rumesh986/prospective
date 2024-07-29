@@ -6,6 +6,7 @@
 struct config {
 	struct net_params net_params;
 	struct training_params train_params;
+	struct testing_params test_params;
 
 	char *net_name;
 	bool should_train;

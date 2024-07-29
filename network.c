@@ -2,7 +2,7 @@
 #include <gsl/gsl_blas.h>
 
 #include "include/all.h"
-
+#include "include/savefiles.h"
 // local header
 
 struct _network {
@@ -80,6 +80,9 @@ int save_network(char *filename) {
 		return 1;
 	}
 
+	size_t filetype = SAVE_NETWORK;
+
+	fwrite(&filetype, sizeof(size_t), 1, file);
 	fwrite(&_net.params.mnist, sizeof(mnist_db), 1, file);
 	fwrite(&_net.params.mnist_proc, sizeof(mnist_processing), 1, file);
 
@@ -96,7 +99,7 @@ int save_network(char *filename) {
 	fwrite(_net.params.targets, sizeof(size_t), _net.params.ntargets, file);
 
 	for (int i = 0; i < _net.params.nlayers-1; i++)
-		mat2file(_net.weights[i], file);
+		mat2file(_net.weights[i], SAVE_NET_WEIGHTS, file);
 	
 	fclose(file);
 }
@@ -131,19 +134,21 @@ struct traindata *train(struct training_params train_params) {
 		num_samples = max_count * _net.params.ntargets;
 
 	// prepare logging variables
-	#ifdef LOGGING
-		struct traindata *ret = malloc(sizeof(struct traindata));
+	struct traindata *ret;
+	if (train_params.logging) {
+		ret = malloc(sizeof(struct traindata));
 		ret->delta_w_mags = malloc(sizeof(gsl_vector *) * (_net.params.nlayers-1));
-		ret->energies = malloc(sizeof(gsl_vector *) * num_samples);
+		// ret->energies = malloc(sizeof(gsl_vector *) * num_samples);
 		ret->iter_counts = gsl_vector_calloc(num_samples);
 		ret->num_samples = num_samples;
 		ret->lenergies = malloc(sizeof(gsl_vector **) * num_samples);
-		ret->test_costs = gsl_vector_calloc(num_samples);
+		ret->train_costs = gsl_vector_calloc(num_samples);
 
 		for (int l = 0; l < _net.params.nlayers-1; l++)
 			ret->delta_w_mags[l] = gsl_vector_calloc(num_samples);
+	}
 
-	#endif
+	gsl_vector **energies = malloc(sizeof(gsl_vector *) * num_samples);
 
 	gsl_vector *layers[_net.params.nlayers];
 	gsl_vector *epsilons[_net.params.nlayers];
@@ -153,7 +158,7 @@ struct traindata *train(struct training_params train_params) {
 
 	gsl_vector *test_layers[_net.params.nlayers];
 	gsl_vector *test_label_vec = gsl_vector_calloc(_net.params.ntargets);
-	gsl_vector *test_cost_vec = gsl_vector_calloc(_net.params.ntargets);
+	gsl_vector *train_cost_vec = gsl_vector_calloc(_net.params.ntargets);
 
 	for (int l = 0; l < _net.params.nlayers; l++) {
 		layers[l] = gsl_vector_calloc(_net.params.lengths[l]);
@@ -168,12 +173,13 @@ struct traindata *train(struct training_params train_params) {
 	
 	int target_counter = -1;
 	for (int i = 0; i < num_samples; i++) {
-		#ifdef LOGGING
-			ret->energies[i] = gsl_vector_calloc(_net.params.tau);
+		energies[i] = gsl_vector_calloc(_net.params.tau);
+		if (train_params.logging) {
 			ret->lenergies[i] = malloc(sizeof(gsl_vector *) * _net.params.nlayers-1);
 			for (int l = 0; l < _net.params.nlayers-1; l++)
 				ret->lenergies[i][l] = gsl_vector_calloc(_net.params.tau);
-		#endif
+		}
+
 		int cur_target = i % _net.params.ntargets;
 		if (cur_target == 0)
 			target_counter++;
@@ -226,35 +232,34 @@ struct traindata *train(struct training_params train_params) {
 			// for (int l = 0; l < _net.params.nlayers; l++)
 				// gsl_vector_set_zero(deltax[l]);
 			
-			#ifdef LOGGING
-				gsl_vector_set(ret->energies[i], t, _calc_energy(layers));
-
+			gsl_vector_set(energies[i], t, _calc_energy(layers));
+			if (train_params.logging)
 				_calc_lenergy(layers, ret->lenergies[i], t);
-				// early stop condition
-				if (t == 0)
-					continue;
+			
+			// early stop condition
+			if (t == 0)
+				continue;
 
-				// printf("Energies: %f %f\n", gsl_vector_get(ret->energies[i], t), gsl_vector_get(ret->energies[i], t-1));
-				double diff = gsl_vector_get(ret->energies[i], t-1) - gsl_vector_get(ret->energies[i], t);
-				if ( diff < 0 || diff < train_params.energy_res) {
-					printf("Energy not reducting\n");
-					if (reduction_count > 0) {
-						gamma *= train_params.gamma_rate;
-						reduction_count--;
-					} else {
-						gamma = _net.params.gamma;
-						printf("Stopping early\n");
-						gsl_vector_set(ret->iter_counts, i, t);
-						break;
-					}
+			// printf("Energies: %f %f\n", gsl_vector_get(ret->energies[i], t), gsl_vector_get(ret->energies[i], t-1));
+			double diff = gsl_vector_get(energies[i], t-1) - gsl_vector_get(energies[i], t);
+			if ( diff < 0 || diff < train_params.energy_res) {
+				printf("Energy not reducting\n");
+				if (reduction_count > 0) {
+					gamma *= train_params.gamma_rate;
+					reduction_count--;
+				} else {
+					gamma = _net.params.gamma;
+					printf("Stopping early\n");
+					gsl_vector_set(ret->iter_counts, i, t);
+					break;
 				}
-			#endif
+			}
 		} // relaxation (t)
 
-		#ifdef LOGGING
+		if (train_params.logging) {
 			if (gsl_vector_get(ret->iter_counts, i) == 0)
 				gsl_vector_set(ret->iter_counts, i, _net.params.tau-1);
-		#endif
+		}
 
 		// modify weights
 		for (int l = 0; l < _net.params.nlayers-1; l++) {
@@ -265,18 +270,18 @@ struct traindata *train(struct training_params train_params) {
 			gsl_blas_dger(_net.params.alpha, epsilons[l+1], act, deltaw[l]);
 			gsl_matrix_add(_net.weights[l], deltaw[l]);
 
-			#ifdef LOGGING
+			if (train_params.logging) {
 				gsl_vector_set(ret->delta_w_mags[l], i, frobenius_norm(deltaw[l]));
-			#endif
-
+			}
+			
 			gsl_matrix_set_zero(deltaw[l]);
 			gsl_vector_free(act);
 		}
 
-		#ifdef LOGGING
-			double test_cost = 0.0;
+		if (train_params.logging) {
+			double train_cost = 0.0;
 
-			for (int test_i = 0; test_i < 100; test_i++) {
+			for (int test_i = 0; test_i < train_params.test_samples; test_i++) {
 				gsl_vector_memcpy(test_layers[0], test_data[_net.params.ntargets - 1 - (test_i % _net.params.ntargets)].images[test_i]);
 				gsl_vector_set_zero(test_label_vec);
 				gsl_vector_set(test_label_vec, test_i % _net.params.ntargets, 1);
@@ -288,18 +293,19 @@ struct traindata *train(struct training_params train_params) {
 					gsl_vector_free(act);
 				}
 
-				gsl_vector_memcpy(test_cost_vec, test_layers[_net.params.nlayers-1]);
-				gsl_vector_sub(test_cost_vec, test_label_vec);
+				gsl_vector_memcpy(train_cost_vec, test_layers[_net.params.nlayers-1]);
+				gsl_vector_sub(train_cost_vec, test_label_vec);
 
 				// print_vec(test_layers[_net.params.nlayers-1], "Cost vec", false);
 				
-				test_cost += gsl_blas_dnrm2(test_cost_vec);
-				gsl_vector_set_zero(test_cost_vec);
+				train_cost += gsl_blas_dnrm2(train_cost_vec);
+				gsl_vector_set_zero(train_cost_vec);
 			}
 
-			printf("[%5d] Cost during training: %f\n", i, test_cost);
-			gsl_vector_set(ret->test_costs, i, test_cost);
-		#endif
+			train_cost /= (double)train_params.test_samples;
+			printf("[%5d] Normalized cost during training: %f\n", i, train_cost);
+			gsl_vector_set(ret->train_costs, i, train_cost);
+		}
 
 		gsl_vector_free(label_vec);
 
@@ -324,12 +330,12 @@ struct traindata *train(struct training_params train_params) {
 	for (int i = 0; i < _net.params.ntargets; i++)
 		free_mnist_dataset(data[i]);
 
-	#ifdef LOGGING
+	if (train_params.logging) {
+		ret->energies = energies;
 		return ret;
-	#else
-		// return (struct traindata){};
+	} else {
 		return NULL;
-	#endif
+	}
 }
 
 int save_traindata(struct traindata *data, char *filename) {
@@ -344,25 +350,28 @@ int save_traindata(struct traindata *data, char *filename) {
 		return 2;
 	}
 
+	size_t filetype = SAVE_TRAIN;
+
+	fwrite(&filetype, sizeof(size_t), 1, file);
 	fwrite(&data->num_samples, sizeof(size_t), 1, file);
 	fwrite(&_net.params.nlayers, sizeof(size_t), 1, file);
 	fwrite(&_net.params.ntargets, sizeof(size_t), 1, file);
 	fwrite(_net.params.targets, sizeof(size_t), _net.params.ntargets, file);
 
 	for (int l = 0; l < _net.params.nlayers-1; l++)
-		vec2file(data->delta_w_mags[l], file);
+		vec2file(data->delta_w_mags[l], SAVE_TRAIN_DELTA_WMAGS, file);
 	
-	vec2file(data->iter_counts, file);
+	vec2file(data->iter_counts, SAVE_TRAIN_ITER_COUNTS, file);
 
 	for (int i = 0; i < data->num_samples; i++)
-		vec2file(data->energies[i], file);
+		vec2file(data->energies[i], SAVE_TRAIN_ENERGIES, file);
 	
 	for (int i = 0; i < data->num_samples; i++) {
 		for (int l = 0; l < _net.params.nlayers-1; l++)
-			vec2file(data->lenergies[i][l], file);
+			vec2file(data->lenergies[i][l], SAVE_TRAIN_LENERGIES, file);
 	}
 
-	vec2file(data->test_costs, file);
+	vec2file(data->train_costs, SAVE_TRAIN_TRAINCOSTS, file);
 	
 	fclose(file);
 	return 0;
@@ -385,31 +394,35 @@ void free_traindata(struct traindata *data) {
 	free(data->lenergies);
 	
 	gsl_vector_free(data->iter_counts);
-	gsl_vector_free(data->test_costs);
+	gsl_vector_free(data->train_costs);
 
 	free(data);
 }
 
-struct testdata *test() {
+struct testdata *test(struct testing_params test_params) {
 	printf("Preparing to test\n");
+	printf("%s\n", test_params.logging ? "True" : "False");
 
-	size_t num_samples = 0;
+	size_t num_samples = test_params.num_samples * _net.params.ntargets;
 
 	mnist_dataset data[_net.params.ntargets];
 	for (int i = 0; i < _net.params.ntargets; i++) {
 		data[i] = mnist_get_dataset(mnist_test, _net.params.targets[i], _net.params.mnist_proc);
-		num_samples += data[i].count;
+		if (test_params.num_samples == 0)
+			num_samples += data[i].count;
 	}
 
-	#ifdef LOGGING
-		struct testdata *ret = malloc(sizeof(struct testdata));
+	struct testdata *ret;
+	if (test_params.logging) {
+		ret = malloc(sizeof(struct testdata));
 		ret->confusion = gsl_matrix_calloc(_net.params.ntargets, _net.params.ntargets);
 		ret->costs = malloc(sizeof(gsl_vector *) * _net.params.ntargets);
 		ret->labels = gsl_vector_calloc(num_samples);
+		ret->predictions = gsl_vector_calloc(num_samples);
 		ret->outputs = malloc(sizeof(gsl_vector *) * num_samples);
 		ret->num_samples = num_samples;
-		size_t counter = 0;
-	#endif
+	}
+	size_t counter = 0;
 
 	size_t num_correct = 0;
 	gsl_vector *layers[_net.params.nlayers];
@@ -420,13 +433,18 @@ struct testdata *test() {
 	gsl_vector *cost_vec = gsl_vector_calloc(_net.params.ntargets);
 	
 	for (int target_i = 0; target_i < _net.params.ntargets; target_i++) {
-		#ifdef LOGGING
-			ret->costs[target_i] = gsl_vector_calloc(data[target_i].count);
-		#endif
+		size_t num_samples_per_target;
+		if (test_params.num_samples == 0)
+			num_samples_per_target = data[target_i].count;
+		else
+			num_samples_per_target = test_params.num_samples;
+
+		if (test_params.logging)
+			ret->costs[target_i] = gsl_vector_calloc(num_samples_per_target);
 
 		gsl_vector_set(label_vec, target_i, 1);
 
-		for (int i = 0; i < data[target_i].count; i++) {
+		for (int i = 0; i < num_samples_per_target; i++) {
 			gsl_vector_memcpy(layers[0], data[target_i].images[i]);
 
 			for (int l = 0; l < _net.params.nlayers-1; l++) {
@@ -448,15 +466,17 @@ struct testdata *test() {
 
 			// printf("Test result: target: %d, prediction: %d, cost: %.4f\n", data[target_i].label, prediction, cost);
 			
-			#ifdef LOGGING
+			if (test_params.logging) {
 				gsl_vector_set(ret->costs[target_i], i, cost);
 				gsl_matrix_set(ret->confusion, prediction_index, target_i, gsl_matrix_get(ret->confusion, prediction_index, target_i)+1);
 
 				gsl_vector_set(ret->labels, counter, data[target_i].label);
+				gsl_vector_set(ret->predictions, counter, prediction);
+
 				ret->outputs[counter] = gsl_vector_alloc(_net.params.ntargets);
 				gsl_vector_memcpy(ret->outputs[counter], layers[_net.params.nlayers-1]);
 				counter++;
-			#endif
+			}
 		}
 
 		gsl_vector_set_zero(label_vec);
@@ -478,12 +498,12 @@ struct testdata *test() {
 	for (int i = 0; i < _net.params.ntargets; i++)
 		free_mnist_dataset(data[i]);
 
-	#ifdef LOGGING
+	if (test_params.logging) {
 		ret->num_correct = num_correct;
 		return ret;
-	#else
+	} else {
 		return NULL;
-	#endif
+	}
 
 }
 
@@ -499,17 +519,23 @@ int save_testdata(struct testdata *data, char *filename) {
 		return 2;
 	}
 
+	size_t filetype = SAVE_TEST;
+
+	fwrite(&filetype, sizeof(size_t), 1, file);
 	fwrite(&data->num_samples, sizeof(size_t), 1, file);
 	fwrite(&_net.params.ntargets, sizeof(size_t), 1, file);
 	fwrite(_net.params.targets, sizeof(size_t), _net.params.ntargets, file);
 	fwrite(&data->num_correct, sizeof(size_t), 1, file);
-	mat2file(data->confusion, file);
-	for (int i = 0; i < _net.params.ntargets; i++)
-		vec2file(data->costs[i], file);
+	// mat2file(data->confusion, file);
 	
-	vec2file(data->labels, file);
+	vec2file(data->labels, SAVE_TEST_LABELS, file);
+	vec2file(data->predictions, SAVE_TEST_PREDICTIONS, file);
+
+	for (int i = 0; i < _net.params.ntargets; i++)
+		vec2file(data->costs[i], SAVE_TEST_COSTS, file);
+	
 	for (int i = 0; i < data->num_samples; i++)
-		vec2file(data->outputs[i], file);
+		vec2file(data->outputs[i], SAVE_TEST_OUTPUTS, file);
 	
 	fclose(file);
 }

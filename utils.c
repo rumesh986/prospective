@@ -55,26 +55,29 @@ double frobenius_norm(gsl_matrix *mat) {
 	return sqrt(ret);
 }
 
-void vec2file(gsl_vector *vec, FILE *file) {
-	size_t sizeinfo[2] = {1, vec->size};
-	fwrite(sizeinfo, sizeof(size_t), 2, file);
+void vec2file(gsl_vector *vec, size_t type, FILE *file) {
+	// size_t datainfo[3] = {type, 1, vec->size};
+	size_t datainfo[2] = {1, vec->size};
+	fwrite(datainfo, sizeof(size_t), 2, file);
 
 	gsl_vector_fwrite(file, vec);
 }
 
 gsl_matrix *file2mat(FILE *file) {
-	size_t sizeinfo[2];
-	fread(sizeinfo, sizeof(size_t), 2, file);
+	// size_t datainfo[3];
+	size_t datainfo[2];
+	fread(datainfo, sizeof(size_t), 3, file);
 
-	gsl_matrix *ret = gsl_matrix_alloc(sizeinfo[0], sizeinfo[1]);
+	gsl_matrix *ret = gsl_matrix_alloc(datainfo[1], datainfo[2]);
 	gsl_matrix_fread(file, ret);
 
 	return ret;
 }
 
-void mat2file(gsl_matrix *mat, FILE *file) {
-	size_t sizeinfo[2] = {mat->size1, mat->size2};
-	fwrite(sizeinfo, sizeof(size_t), 2, file);
+void mat2file(gsl_matrix *mat, size_t type, FILE *file) {
+	// size_t datainfo[3] = {type, mat->size1, mat->size2};
+	size_t datainfo[2] = {mat->size1, mat->size2};
+	fwrite(datainfo, sizeof(size_t), 2, file);
 
 	gsl_matrix_fwrite(file, mat);
 }

@@ -27,11 +27,16 @@ struct training_params {
 	size_t gamma_count;
 
 	double energy_res;
+
+	size_t test_samples;
+
+	bool logging;
 };
 
-struct lenergy {
-	size_t layer;
-	gsl_vector *epsilon;
+struct testing_params {
+	size_t num_samples;
+
+	bool logging;
 };
 
 struct traindata {
@@ -39,9 +44,8 @@ struct traindata {
 	gsl_vector *iter_counts;
 	gsl_vector **energies;
 
-	// struct lenergy *lenergies;
 	gsl_vector ***lenergies;
-	gsl_vector *test_costs;
+	gsl_vector *train_costs;
 
 	size_t num_samples;
 };
@@ -51,6 +55,7 @@ struct testdata {
 	gsl_vector **costs;
 
 	gsl_vector *labels;
+	gsl_vector *predictions;
 	gsl_vector **outputs;
 
 	size_t num_correct;
@@ -66,7 +71,7 @@ struct traindata *train(struct training_params train_params);
 int save_traindata(struct traindata *data, char *filename);
 void free_traindata(struct traindata *data);
 
-struct testdata *test();
+struct testdata *test(struct testing_params test_params);
 int save_testdata(struct testdata *data, char *filename);
 void free_testdata(struct testdata *data);
 
