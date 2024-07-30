@@ -128,7 +128,7 @@ struct config parse_config(char *filename) {
 		set_val(early_stop_configs, "energy_residual", &ret.train_params.energy_res, &(double){0}, double_tt);
 	}
 
-	set_val(test_configs, "num_samples", &ret.test_params.num_samples, &(size_t){0}, size_tt);
+	set_val(test_configs, "num_samples_per_target", &ret.test_params.num_samples, &(size_t){0}, size_tt);
 	set_val(test_configs, "logging", &ret.test_params.logging, &(bool){true}, bool_tt);
 
 	if (name_config) {
@@ -169,7 +169,17 @@ void free_config() {
 	cJSON_Delete(_config);
 }
 
-void save_config(char *filename) {
+void save_config(struct config config, char *filename) {
+	cJSON *name_config = cJSON_GetObjectItem(_config, "name");
+	if (!cJSON_HasObjectItem(_config, "name"))
+		cJSON_AddStringToObject(_config, "name", config.net_name);
+	
+	cJSON *training_config = cJSON_GetObjectItem(_config, "training");
+	cJSON *seed_config = cJSON_GetObjectItem(training_config, "seed");
+	if (cJSON_GetNumberValue(seed_config) == 0) 
+		cJSON_SetNumberValue(seed_config, config.train_params.seed);
+	
+
 	char *print = cJSON_Print(_config);
 	FILE *file = fopen(filename, "w");
 	if (!file) {

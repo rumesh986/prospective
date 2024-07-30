@@ -5,6 +5,8 @@
 #include "include/savefiles.h"
 // local header
 
+#define SAVESIZET(f, x)	fwrite(&x, sizeof(size_t), 1, f)
+
 struct _network {
 	gsl_matrix **weights;
 	struct net_params params;
@@ -242,7 +244,14 @@ struct traindata *train(struct training_params train_params) {
 
 			// printf("Energies: %f %f\n", gsl_vector_get(ret->energies[i], t), gsl_vector_get(ret->energies[i], t-1));
 			double diff = gsl_vector_get(energies[i], t-1) - gsl_vector_get(energies[i], t);
-			if ( diff < 0 || diff < train_params.energy_res) {
+			if (diff < train_params.energy_res) {
+				printf("[%5d] Energy below threshold, assuming converged\n", i);
+				gamma = _net.params.gamma;
+				gsl_vector_set(ret->iter_counts, i, t);
+				break;
+			}
+
+			if ( diff < 0) {
 				printf("Energy not reducting\n");
 				if (reduction_count > 0) {
 					gamma *= train_params.gamma_rate;
@@ -352,27 +361,30 @@ int save_traindata(struct traindata *data, char *filename) {
 
 	size_t filetype = SAVE_TRAIN;
 
-	fwrite(&filetype, sizeof(size_t), 1, file);
+	fwrite(&(size_t){SAVE_TRAIN}, sizeof(size_t), 1, file);
 	fwrite(&data->num_samples, sizeof(size_t), 1, file);
 	fwrite(&_net.params.nlayers, sizeof(size_t), 1, file);
 	fwrite(&_net.params.ntargets, sizeof(size_t), 1, file);
 	fwrite(_net.params.targets, sizeof(size_t), _net.params.ntargets, file);
 
-	for (int l = 0; l < _net.params.nlayers-1; l++)
-		vec2file(data->delta_w_mags[l], SAVE_TRAIN_DELTA_WMAGS, file);
+	printf("Starting to write traindata\n");
+	vecs2file(data->delta_w_mags, SAVE_TRAIN_DELTA_WMAGS, 1, &(size_t){_net.params.nlayers-1}, file);
+	printf("wrote deltamags\n");
+	vecs2file(&data->iter_counts, SAVE_TRAIN_ITER_COUNTS, 1, &(size_t){1}, file);
+	printf("wrote itercounts\n");
+	vecs2file(data->energies, SAVE_TRAIN_ENERGIES, 1, &(size_t){data->num_samples}, file);
+	printf("wrote energies\n");
 	
-	vec2file(data->iter_counts, SAVE_TRAIN_ITER_COUNTS, file);
+	// fclose(file);
+	// return 0;
 
-	for (int i = 0; i < data->num_samples; i++)
-		vec2file(data->energies[i], SAVE_TRAIN_ENERGIES, file);
-	
-	for (int i = 0; i < data->num_samples; i++) {
-		for (int l = 0; l < _net.params.nlayers-1; l++)
-			vec2file(data->lenergies[i][l], SAVE_TRAIN_LENERGIES, file);
-	}
+	size_t dims[2] = {data->num_samples, _net.params.nlayers-1};
+	vecs2file(data->lenergies, SAVE_TRAIN_LENERGIES, 2, dims, file);
+	printf("wrote lenergies\n");
 
-	vec2file(data->train_costs, SAVE_TRAIN_TRAINCOSTS, file);
-	
+	vecs2file(&data->train_costs, SAVE_TRAIN_TRAINCOSTS, 1, &(size_t){1}, file);
+	printf("Finished writing traindata\n");
+
 	fclose(file);
 	return 0;
 }
@@ -526,16 +538,11 @@ int save_testdata(struct testdata *data, char *filename) {
 	fwrite(&_net.params.ntargets, sizeof(size_t), 1, file);
 	fwrite(_net.params.targets, sizeof(size_t), _net.params.ntargets, file);
 	fwrite(&data->num_correct, sizeof(size_t), 1, file);
-	// mat2file(data->confusion, file);
-	
-	vec2file(data->labels, SAVE_TEST_LABELS, file);
-	vec2file(data->predictions, SAVE_TEST_PREDICTIONS, file);
 
-	for (int i = 0; i < _net.params.ntargets; i++)
-		vec2file(data->costs[i], SAVE_TEST_COSTS, file);
-	
-	for (int i = 0; i < data->num_samples; i++)
-		vec2file(data->outputs[i], SAVE_TEST_OUTPUTS, file);
+	vecs2file(&data->labels, SAVE_TEST_LABELS, 1, &(size_t){1}, file);
+	vecs2file(&data->predictions, SAVE_TEST_PREDICTIONS, 1, &(size_t){1}, file);
+	vecs2file(data->costs, SAVE_TEST_COSTS, 1, &_net.params.ntargets, file);
+	vecs2file(data->outputs, SAVE_TEST_OUTPUTS, 1, &data->num_samples, file);
 	
 	fclose(file);
 }

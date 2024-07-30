@@ -70,7 +70,7 @@ int main(int argc, char **argv) {
 			sprintf(netname, "%s/%s", results_dir, config.net_name);
 			save_network(netname);
 			strcat(netname, ".json");
-			save_config(netname);
+			save_config(config, netname);
 		}
 	}
 

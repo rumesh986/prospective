@@ -14,7 +14,7 @@ struct config {
 };
 
 struct config parse_config(char *filename);
-void save_config(char *filename);
+void save_config(struct config config, char *filename);
 void free_config();
 void print_config(struct config config);
 

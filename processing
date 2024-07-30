@@ -3,42 +3,10 @@
 import struct
 import argparse
 import os
-from functools import reduce
-import warnings
-
 
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
-
-def _read_mat(f):
-	size = struct.unpack('2Q', f.read(8*2))
-	ret = np.fromfile(f, dtype='double', count=size[0]*size[1]).reshape(size)
-
-	return ret[0] if size[0] == 1 else ret
-
-def _read_file(f, data_dict):
-	start_pos = f.tell()
-	f.seek(2, 0)
-	end_pos = f.tell()
-	f.seek(start_pos)
-
-	while f.tell() != end_pos:
-		data = struct.unpack('3Q', f.read(8*3))
-		if data[0] not in data_dict.keys():
-			data_dict[data[0]] = []
-
-		data_dict[data[0]].append(np.fromfile(f, dtype='double', count=data[1]*data[2]).reshape([data[1], data[2]]))
-
-def _get_latest_run():
-	folders = os.listdir('results')
-	paths = [os.path.join('results', basename) for basename in folders]
-	latest = max(paths, key=os.path.getctime)
-
-	return f'{latest}'
-
-def _get_network(folder):
-	return f'{folder}/{[x for x in os.listdir(folder) if "." not in x][0]}'
 
 SAVE_NETWORK			= 0x01
 SAVE_TRAIN				= 0x02
@@ -55,305 +23,279 @@ SAVE_TEST_PREDICTIONS	= 0x32
 SAVE_TEST_OUTPUTS		= 0x33
 SAVE_TEST_COSTS			= 0x34
 
-class TrainData:
+class FileReader:
 	def __init__(self, filename):
 		self.dir, self.netname = filename.rsplit('/', 1)
 		self.netname = self.netname.split('.')[0]
-		with open(filename, "rb") as f:
-			self.filetype, self.num_samples, self.nlayers, self.ntargets = struct.unpack('4Q', f.read(8*4))
-			if self.filetype != SAVE_TRAIN:
-				print("ERROR: Invalid file (possibly too old)")
-				exit(1)
 
-			# data_dict = {
-			# 	SAVE_NET_TARGETS: self.targets,
-			# 	SAVE_TRAIN_DELTA_WMAGS: self.delta_w_mags,
-			# 	SAVE_TRAIN_ITER_COUNTS: self.iters,
-			# 	SAVE_TRAIN_ENERGIES: self.energies,
-			# 	SAVE_TRAIN_LENERGIES: self.lenergies,
-
-			# }
-
-
-			self.targets = struct.unpack(f'{self.ntargets}Q', f.read(8*self.ntargets))
-
-			self.delta_w_mags = []
-			for _ in range(self.nlayers-1):
-				self.delta_w_mags.append(_read_mat(f))
-
-			self.iters = _read_mat(f)
-
-			self.energies = []
-			for _ in range(self.num_samples):
-				self.energies.append(_read_mat(f))
-			
-			self.lenergies = []
-			for _ in range(self.num_samples):
-				sample = []
-				for _ in range(self.nlayers-1):
-					sample.append(_read_mat(f))
-				
-				self.lenergies.append(sample)
-			
-			self.test_costs = _read_mat(f)
+		self.f = open(filename, "rb")
 	
+	def get_name(self):
+		return self.dir, self.netname
+	
+	def read(self, n, squeeze=True):
+		data = struct.unpack(f'{n}Q', self.f.read(8*n))
+		return data[0] if n == 1 and squeeze else data
+
+	def read_mat(self):
+		size = self.read(2)
+		ret = np.fromfile(self.f, dtype='double', count=size[0]*size[1]).reshape(size)
+		return ret[0] if size[0] == 1 else ret
+	
+	def _recursive_read(self, data, dims, depth):
+		for i in range(dims[depth]):
+			if depth == len(dims)-1:
+				data.append(self.read_mat())
+			else:
+				data.append([])
+				self._recursive_read(data[i], dims, depth+1)
+
+	def read_data(self, format):
+		start_pos = self.f.tell()
+		self.f.seek(0, 2)
+		end_pos = self.f.tell()
+		self.f.seek(start_pos)
+
+		while self.f.tell() != end_pos:
+			try:
+				type, ndims = self.read(2)
+			except:
+				return
+			if type not in format.keys():
+				continue
+
+			dims = self.read(ndims, squeeze=False)
+
+			format[type].append([])
+			self._recursive_read(format[type][0], dims, 0)
+
+
+	def close(self):
+		self.f.close()
+
+
+
+class TrainData:
+	def __init__(self, filename):
+		self.file = FileReader(filename)
+		self.dir, self.netname = self.file.get_name()
+
+		self.filetype, self.num_samples, self.nlayers, self.ntargets = self.file.read(4)
+		self.targets = self.file.read(self.ntargets)
+
+		self.delta_w_mags = []
+		self.iter_counts = []
+		self.energies = []
+		self.lenergies = []
+		self.train_costs = []
+		read_dict = {
+			SAVE_TRAIN_DELTA_WMAGS: self.delta_w_mags,
+			SAVE_TRAIN_ITER_COUNTS: self.iter_counts,
+			SAVE_TRAIN_TRAINCOSTS: self.train_costs,
+			SAVE_TRAIN_ENERGIES: self.energies,
+			SAVE_TRAIN_LENERGIES: self.lenergies
+		}
+
+		self.file.read_data(read_dict)
+		self.file.close()
+
+		self.delta_w_mags = self.delta_w_mags[0]
+		self.iter_counts= self.iter_counts[0][0]
+		self.train_costs = self.train_costs[0][0]
+		self.energies= self.energies[0]
+		self.lenergies = self.lenergies[0]
+
+		self.colors = ['black', 'blue', 'red', 'green', 'yellow', 'orange', 'pink', 'brown', 'cyan', 'magenta']
+
+	def _save(self, filename):
+		plt.savefig(f'{self.dir}/train_{filename}.png')
+		plt.close()
+	
+	def _title(self, title):
+		plt.title(f"{title} - {self.netname}")
+
+
 	def plot_dw(self):
 		i = 0
 		for layer in self.delta_w_mags:
-			x = np.arange(0, len(layer))
-			sns.regplot(x=x, y=layer, marker='x', label=f"layer-{i}", scatter_kws={
+			sns.regplot(x=np.arange(len(layer)), y=layer, label=f"layer {i}", scatter_kws={
 				's': 10,
 				'alpha': 0.2
 			})
 			i += 1
-		
-		plt.ylabel('Magnitude')
-		plt.xlabel('Training sample')
-		plt.title(f'Magnitude of weight changes {self.netname}')
+
+		plt.ylabel("Magnitude")
+		plt.xlabel("Training sample")
 		plt.yscale('log')
-		plt.legend(loc='upper right')
-		plt.savefig(f'{self.dir}/delta_w_mags.png')
-		plt.close()
-	
+		plt.legend(loc="upper right")
+		self._title("Magnitude of weight changes")
+		self._save("delta_wmags")
+
 	def plot_iters(self):
-		# plt.scatter(range(len(self.iters)), self.iters)
-		sns.regplot(x=np.arange(len(self.iters)), y=self.iters, marker='x', scatter_kws={
+		sns.regplot(x=np.arange(len(self.iter_counts)), y=self.iter_counts, marker='x', scatter_kws={
 			's': 10,
-			'alpha': 0.5
+			'alpha': 0.2
 		})
-		
 
 		plt.ylabel("Number of iterations")
-		plt.xlabel('Training sample')
-		plt.title(f'Number of iterations {self.netname}')
-
-		plt.savefig(f'{self.dir}/iters.png')
-		plt.close()
+		plt.xlabel("Training sample")
+		self._title("Number of iterations")
+		self._save("iters.png")
 	
-	def plot_energies(self):
-		for i in range(self.num_samples):
-			filtered = [x for x in self.energies[i] if x != 0]
-			plt.semilogy(filtered)
-		
-		plt.ylabel('Energy')
-		plt.xlabel('iteration')
-		plt.title(f'Energy across iterations {self.netname}')
-		
-		plt.savefig(f'{self.dir}/energies.png')
-		plt.close()
-
-	def plot_lenergies(self):
-		colors = ['black', 'blue', 'red', 'green', 'yellow', 'orange', 'pink', 'brown', 'cyan', 'magenta']
-		allzero_cnt = 0
-		for sample in self.lenergies:
-			for i in range(self.nlayers-1):
-				filtered = [x for x in sample[i] if x != 0]
-				plt.semilogy(filtered, c=colors[i], label=f"{i}")
-			
-			if (not any(sample[-1])):
-				allzero_cnt += 1
-
-		# print(f"{allzero_cnt}/{self.num_samples} have zero final layers")		
-		plt.legend()
-		plt.savefig(f'{self.dir}/lenergies.png')
-		plt.close()
-
-	def plot_energy_diff(self):
-		for sample in self.lenergies:
-			hidden = [np.array(x) for x in sample[:-1]]
-			final = sample[-1] - reduce(lambda a,b: a +b, hidden)
-			plt.semilogy([x for x in final if x != 0])
-		
-		plt.savefig(f'{self.dir}/energy_diff.png')
-		plt.close()
-
-	def plot_energy_ratio(self):
-		for sample in self.lenergies:
-			ratio = []
-
-			layers = np.array([np.array(x) for x in sample])
-			total = layers.sum(axis=0)
-			with warnings.catch_warnings(record=True) as w:
-				ratio = layers[-1] / total
-				if len(w) > 0:
-					pass
-					# print(f"layers[-1]: {layers[-1]}")
-					# print(f"total: {total}")
-					# print(f"ratio: {ratio}")
-
-			plt.plot(ratio)
-		
-		plt.xlabel("Iteration")
-		plt.title(f"Ratio of final layer energy over total energy {self.netname}")
-
-		plt.savefig(f"{self.dir}/final_layer_energy_ratio.png")
-		plt.close()
-	
-	def plot_final_layer_energies(self):
-		for sample in self.lenergies:
-			sample2 = [x for x in sample[-1] if x != 0]
-			plt.plot(sample2)
-		
-		plt.xlabel("Iterations")
-		plt.ylabel("Energy")
-		plt.title(f"Final layer energies {self.netname}")
-		plt.savefig(f"{self.dir}/final_layer_energies.png")
-		plt.close()
-
-	def plot_test_costs(self):
-		plt.plot(self.test_costs)
+	def plot_train_costs(self):
+		plt.plot(self.train_costs)
 
 		plt.xlabel("Training sample")
 		plt.ylabel("Cost")
-		plt.title(f"Cost of model across training {self.netname}")
+		
+		self._title("Cost during training")
+		self._save("costs")
 
-		plt.savefig(f'{self.dir}/test_costs.png')
-		plt.close()
-
-	def plot_residual(self):
+	def plot_energies(self):
 		for sample in self.energies:
-			sample2 = [x for x in sample if x != 0]
-			res = [sample[i] - sample[i+1] for i in range(len(sample2)-1)]
-			res2 = [x for x in res if x != 0]
-			# print(res)
-			plt.semilogy(res2)
+			filtered = [x for x in sample if x != 0]
+			plt.semilogy(filtered)
 		
-		plt.ylabel('\Delta energy')
-		plt.xlabel('iteration')
-		plt.title(f'\Delta Energy across iterations {self.netname}')
-		
-		plt.savefig(f'{self.dir}/delta_energies.png')
-		plt.close()
+		plt.ylabel("Energy")
+		plt.xlabel("Iterations")
 
+		self._title("Energy across iterations")
+		self._save("energies")
+	
+	def plot_lenergies(self):
+		count = 0
+		for sample in self.lenergies:
+			for layer in sample:
+				filtered = [x for x in layer if x != 0]
+				plt.semilogy(filtered, c=self.colors[count % (self.nlayers-1)])
+				count += 1
+		
+
+		plt.legend([f"Layer {i}" for i in range(self.nlayers-1)])
+		plt.ylabel("Energy")
+		plt.xlabel("Iterations")
+
+		self._title("Energy in each layer across iterations")
+		self._save("lenergies")
+	
+	
+	def plot_energy_residual(self):
+		for sample in self.energies:
+			filtered = [x for x in sample if x != 0]
+			res = [sample[i] - sample[i+1] for i in range(len(filtered)-1)]
+			filtered_res = [x for x in res if x != 0]
+
+			plt.semilogy(filtered_res)
+		
+		plt.ylabel("delta energy")
+		plt.xlabel("Iterations")
+
+		self._title("delta energy across iterations")
+		self._save("delta_energies")
+	
+	def plot_energy_ratio(self):
+		for sample in self.lenergies:
+			layers = np.array([np.array(x) for x in sample])
+			# layer = np.array(sample[-1])
+			total = layers.sum(axis=0)
+			# print(f"flayer: {layers[-1]}, total: {total}")
+			ratio = [layers[-1][i] / total[i] for i in range(len(total)) if total[i] != 0]
+
+			plt.plot(ratio)
+		
+		plt.ylabel("Final energy / total energy")
+		plt.xlabel("Iterations")
+
+		self._title("Ratio of final energy to total energy")
+		self._save("flenergy_ratio")
 
 	def plot_all(self):
 		self.plot_dw()
 		self.plot_iters()
-		self.plot_energies()
-		# self.plot_energy_diff()
-		self.plot_test_costs()
-		self.plot_energy_ratio()
-		self.plot_final_layer_energies()
-		self.plot_lenergies()
-		self.plot_residual()
+		self.plot_train_costs()
 
-	def trial(self):
-		increasing_regimes = []
-		ingroup = False
-		for i in range(len(self.test_costs)):
-			if self.test_costs[i] > self.test_costs[i-1]:
-				if ingroup:
-					increasing_regimes[-1].append(i)
-				else:
-					increasing_regimes.append([i])
-					ingroup = True
-			else:
-				ingroup = False
-				# print(f"Increasing cost at {i} ({self.test_costs[i-1]} -> {self.test_costs[i]})")
-		# print(increasing_regimes)
-		increasing_regimes = increasing_regimes[1:]
-		for i in increasing_regimes:
-			print(f"Range: {min(i)} -> {max(i)}")
-		
-		plt.semilogy(self.test_costs, label="Test costs")
-		i = 0
-		for layer in self.delta_w_mags:
-			plt.semilogy(layer * 100000, label=f"layer {i} dw")
-			i += 1
-		
-		plt.legend()
-		plt.xlabel("Training sample")
-		plt.ylabel("Cost/Magnitude")
-		plt.title("Rescaled delta weights with training costs")
-		
-		plt.savefig("trial.png")
-		plt.close()
-				
+		self.plot_energies()
+		self.plot_lenergies()
+		self.plot_energy_residual()
+		self.plot_energy_ratio()
 
 class TestData:
 	def __init__(self, filename):
-		self.dir, self.netname = filename.rsplit('/', 1)
-		self.netname = self.netname.split('.')[0]
-		with open(filename, "rb") as f:
-			self.filetype, self.num_samples, self.ntargets = struct.unpack('3Q', f.read(8*3))
-			self.targets = struct.unpack(f'{self.ntargets}Q', f.read(8*self.ntargets))
-			self.num_correct = struct.unpack('Q', f.read(8))[0]
+		self.file = FileReader(filename)
+		self.dir, self.netname = self.file.get_name()
 
-			# self.confusion = _read_mat(f)
-			self.labels = _read_mat(f)
-			self.predictions = _read_mat(f)
+		self.filetype, self.num_samples, self.ntargets = self.file.read(3)
+		self.targets = self.file.read(self.ntargets)
+		self.num_correct = self.file.read(1)
 
-			self.costs = []
-			for _ in range(self.ntargets):
-				self.costs.append(_read_mat(f))
+		self.labels = []
+		self.predictions = []
+		self.costs = []
+		self.outputs = []
 
-			self.outputs = []
-			for _ in range(self.num_samples):
-				self.outputs.append(_read_mat(f))
+		format = {
+			SAVE_TEST_LABELS: self.labels,
+			SAVE_TEST_PREDICTIONS: self.predictions,
+			SAVE_TEST_COSTS: self.costs,
+			SAVE_TEST_OUTPUTS: self.outputs
+		}
+
+		self.file.read_data(format)
+		self.file.close()
+
+		self.labels = self.labels[0][0]
+		self.predictions = self.predictions[0][0]
+		self.costs = self.costs[0]
+		self.outputs = self.outputs[0]
+
+		self.colors = ['black', 'blue', 'red', 'green', 'yellow', 'orange', 'pink', 'brown', 'cyan', 'magenta']
+
+	def _save(self, filename):
+		plt.savefig(f'{self.dir}/test_{filename}.png')
+		plt.close()
 	
+	def _title(self, title):
+		plt.title(f"{title} - {self.netname}")
+
 	def plot_costs(self):
-		for i in range(self.ntargets):
-			plt.plot(self.costs[i])
+		for item in self.costs:
+			plt.plot(item)
 		
 		plt.ylabel("Cost")
-		plt.xlabel("testing sample")
-		plt.title(f"final cost during testing {self.netname}")
-		plt.savefig(f'{self.dir}/costs.png')
-
-		plt.close()
+		plt.xlabel("Testing sample")
+		
+		self._title("Final cost in testing")
+		self._save("costs")
 	
 	def plot_preds(self):
 		false = self.num_samples - self.num_correct
-		
-		fig, (pie_axis, tbl_axis) = plt.subplots(1, 2, figsize=(10,5))
 
+		fig, (pie_axis, tbl_axis) = plt.subplots(1, 2, figsize=(10,5))
 		pie_axis.pie([self.num_correct, false], labels=[f"correct: {self.num_correct}", f"false: {false}"])
 
 		table = [
 			["total", self.num_samples],
-			["Accuracy", self.num_correct/self.num_samples],
-			["", ""],
-			# ["predictions"]
+			["accuracy", self.num_correct / self.num_samples],
+			["",""]
 		]
 
 		tbl_axis.axis("off")
-		tbl_axis.table(table, loc='center')
+		tbl_axis.table(table, loc="center")
 
-		plt.title(f"Prediction stats {self.netname}")
-		plt.savefig(f"{self.dir}/preds.png")
-		plt.close()
+		self._title("Prediction stats")
+		self._save("preds")
 	
 	def plot_outputs(self):
-		colors = ['black', 'blue', 'red', 'green', 'yellow', 'orange', 'pink', 'brown', 'cyan', 'magenta']
 		for i in range(self.num_samples):
 			target_i = self.targets.index(self.labels[i])
-			plt.scatter(range(self.ntargets), self.outputs[i], c=colors[target_i % self.ntargets])
+			plt.scatter(range(self.ntargets), self.outputs[i], c=self.colors[target_i % self.ntargets])
 		
 		plt.legend([f"{self.targets[i]}" for i in range(self.ntargets)])
-		plt.ylabel("neuron value")
-		plt.xlabel("neuron")
-		plt.title(f"Output vectors {self.netname}")
-		# plt.legend()
-		plt.savefig(f"{self.dir}/outputs.png")
-		plt.close()
-	
-	# def plot_outputs2(self):
-	# 	print(self.num_samples)
-	# 	print(self.ntargets)
-	# 	mat = np.ndarray(shape=(self.ntargets, self.num_samples))
-	# 	# mat = np.concatenate(self.outputs, axis=1)
-	# 	# print(mat)
-	# 	for i in range(self.num_samples):
-	# 		mat[i] = self.outputs[i]
-
-	# 	fig, ax = plt.subplots(1, subplot_kw={'projection': '3d'})
-	# 	ax.plot_surface(range(self.ntargets), range(self.num_samples), mat)
-	# 	plt.savefig(f"{self.dir}/output_surf.png")
-	# 	plt.close()
-
-	def print_outputs(self):
-		for i in range(self.num_samples):
-			print(f"[{self.labels[i]}]: {self.outputs[i]}")
+		plt.ylabel("Neuron value")
+		plt.xlabel("Neuron")
+		
+		self._title("Output vectors")
+		self._save("outputs")
 
 
 	def plot_all(self):
@@ -361,36 +303,20 @@ class TestData:
 		self.plot_preds()
 		self.plot_outputs()
 
-	def trial(self):
-		print(self.num_correct)
-		print(self.num_samples)
-		print(self.confusion)
-
 if __name__ == '__main__':
 	parser = argparse.ArgumentParser()
-	# parser.add_argument("net")
 	parser.add_argument('-f', '--folder')
 	args = parser.parse_args()
 
 	if not args.folder:
-		args.folder = _get_latest_run()
+		folders = os.listdir('results')
+		paths = [os.path.join('results', basename) for basename in folders]
+		args.folder = f'{max(paths, key=os.path.getctime)}'
+	
+	network = f"{args.folder}/{[x for x in os.listdir(args.folder) if '.' not in x][0]}"
 
-	network = _get_network(args.folder)
+	train = TrainData(f'{network}.traindata')
+	train.plot_all()
 
-	traindata = TrainData(f"{network}.traindata")
-	# traindata.trial()
-	traindata.plot_all()
-	# traindata.plot_final_layer_energies()
-	# traindata.plot_energies()
-	# traindata.plot_residual()
-
-	testdata = TestData(f"{network}.testdata")
-	testdata.plot_all()
-	# # testdata.plot_outputs2()
-	# testdata.print_outputs()	
-
-	# traindata = TrainData("testfile")
-	# traindata.plot_dw()
-
-	# testdata = TestData("testfile")
-	# testdata.trial()
+	test = TestData(f"{network}.testdata")
+	test.plot_all()

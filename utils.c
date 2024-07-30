@@ -55,16 +55,34 @@ double frobenius_norm(gsl_matrix *mat) {
 	return sqrt(ret);
 }
 
-void vec2file(gsl_vector *vec, size_t type, FILE *file) {
-	// size_t datainfo[3] = {type, 1, vec->size};
+void vec2file(gsl_vector *vec, FILE *file) {
 	size_t datainfo[2] = {1, vec->size};
 	fwrite(datainfo, sizeof(size_t), 2, file);
 
 	gsl_vector_fwrite(file, vec);
 }
 
+void _recursive_vec2file(void *data, size_t ndims, size_t *dims, int depth, FILE *file) {
+	for (int i = 0; i < dims[depth]; i++) {
+		if (depth == ndims-1) {
+			vec2file( ((gsl_vector **)data)[i], file);
+		} else {
+			_recursive_vec2file(( (void **) data)[i],  ndims, dims, depth+1, file);
+
+		}
+	}
+}
+
+void vecs2file(void *data, size_t type, size_t ndims, size_t *dims, FILE *file) {
+	size_t header[2] = {type, ndims};
+
+	fwrite(header, sizeof(size_t), 2, file);
+	fwrite(dims, sizeof(size_t), ndims, file);
+
+	_recursive_vec2file(data, ndims, dims, 0, file);
+}
+
 gsl_matrix *file2mat(FILE *file) {
-	// size_t datainfo[3];
 	size_t datainfo[2];
 	fread(datainfo, sizeof(size_t), 3, file);
 
@@ -75,7 +93,6 @@ gsl_matrix *file2mat(FILE *file) {
 }
 
 void mat2file(gsl_matrix *mat, size_t type, FILE *file) {
-	// size_t datainfo[3] = {type, mat->size1, mat->size2};
 	size_t datainfo[2] = {mat->size1, mat->size2};
 	fwrite(datainfo, sizeof(size_t), 2, file);
 
