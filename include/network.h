@@ -1,12 +1,19 @@
 #ifndef __NETWORK_H__
 #define __NETWORK_H__
 
+struct relaxation_params {
+	double gamma;
+	double gamma_rate;
+
+	size_t gamma_count;
+	double energy_res;
+};
+
 struct net_params {
 	mnist_db mnist;
 	mnist_processing mnist_proc;
 
 	double alpha;
-	double gamma;
 	
 	size_t tau;
 	enum activation act;
@@ -17,24 +24,25 @@ struct net_params {
 
 	size_t ntargets;
 	size_t *targets; // must be alloc'd
+
+	struct relaxation_params relax_params;
 };
 
 struct training_params {
 	size_t num_samples;
 	size_t seed;
 
-	double gamma_rate;
-	size_t gamma_count;
-
-	double energy_res;
-
 	size_t test_samples;
+
+	struct relaxation_params relax_params;
 
 	bool logging;
 };
 
 struct testing_params {
 	size_t num_samples;
+
+	struct relaxation_params relax_params;
 
 	bool logging;
 };
@@ -58,6 +66,10 @@ struct testdata {
 	gsl_vector *predictions;
 	gsl_vector **outputs;
 
+	gsl_vector **energies;
+	gsl_vector ***lenergies;
+	gsl_vector *iter_counts;
+
 	size_t num_correct;
 	size_t num_samples;
 };
@@ -71,7 +83,7 @@ struct traindata *train(struct training_params train_params);
 int save_traindata(struct traindata *data, char *filename);
 void free_traindata(struct traindata *data);
 
-struct testdata *test(struct testing_params test_params);
+struct testdata *test(struct testing_params test_params, bool relaxation);
 int save_testdata(struct testdata *data, char *filename);
 void free_testdata(struct testdata *data);
 

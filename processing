@@ -220,9 +220,10 @@ class TrainData:
 		self.plot_energy_ratio()
 
 class TestData:
-	def __init__(self, filename):
+	def __init__(self, filename, append=""):
 		self.file = FileReader(filename)
 		self.dir, self.netname = self.file.get_name()
+		self.append = append
 
 		self.filetype, self.num_samples, self.ntargets = self.file.read(3)
 		self.targets = self.file.read(self.ntargets)
@@ -232,13 +233,21 @@ class TestData:
 		self.predictions = []
 		self.costs = []
 		self.outputs = []
+		self.energies = []
+		self.lenergies = []
+		self.iter_counts = []
 
 		format = {
 			SAVE_TEST_LABELS: self.labels,
 			SAVE_TEST_PREDICTIONS: self.predictions,
 			SAVE_TEST_COSTS: self.costs,
-			SAVE_TEST_OUTPUTS: self.outputs
+			SAVE_TEST_OUTPUTS: self.outputs,
+			SAVE_TRAIN_ENERGIES: self.energies,
+			SAVE_TRAIN_LENERGIES: self.lenergies,
+			SAVE_TRAIN_ITER_COUNTS: self.iter_counts
 		}
+
+		self.nlayers = 4
 
 		self.file.read_data(format)
 		self.file.close()
@@ -247,11 +256,17 @@ class TestData:
 		self.predictions = self.predictions[0][0]
 		self.costs = self.costs[0]
 		self.outputs = self.outputs[0]
+		self.energies = self.energies[0] if len(self.energies) == 1 else self.energies
+		self.lenergies = self.lenergies[0] if len(self.lenergies) == 1 else self.lenergies
+		self.iter_counts = self.iter_counts[0][0] if len(self.iter_counts) == 1 else self.iter_counts
 
 		self.colors = ['black', 'blue', 'red', 'green', 'yellow', 'orange', 'pink', 'brown', 'cyan', 'magenta']
 
 	def _save(self, filename):
-		plt.savefig(f'{self.dir}/test_{filename}.png')
+		if self.append != "":
+			plt.savefig(f'{self.dir}/test_{filename}_{self.append}.png')
+		else:
+			plt.savefig(f'{self.dir}/test_{filename}.png')
 		plt.close()
 	
 	def _title(self, title):
@@ -288,7 +303,7 @@ class TestData:
 	def plot_outputs(self):
 		for i in range(self.num_samples):
 			target_i = self.targets.index(self.labels[i])
-			plt.scatter(range(self.ntargets), self.outputs[i], c=self.colors[target_i % self.ntargets])
+			plt.scatter(np.arange(self.ntargets), self.outputs[i], c=self.colors[target_i % self.ntargets])
 		
 		plt.legend([f"{self.targets[i]}" for i in range(self.ntargets)])
 		plt.ylabel("Neuron value")
@@ -296,12 +311,98 @@ class TestData:
 		
 		self._title("Output vectors")
 		self._save("outputs")
+	
+	def plot_iters(self):
+		if len(self.iter_counts) == 0:
+			return
+		
+		sns.regplot(x=np.arange(len(self.iter_counts)), y=self.iter_counts, marker='x', scatter_kws={
+			's': 10,
+			'alpha': 0.2
+		})
 
+		plt.ylabel("Number of iterations")
+		plt.xlabel("Training sample")
+		self._title("Number of iterations")
+		self._save("iters")
+
+	def plot_energies(self):
+		if len(self.energies) == 0:
+			return
+		
+		for sample in self.energies:
+			filtered = [x for x in sample if x != 0]
+			plt.semilogy(filtered)
+		
+		plt.ylabel("Energy")
+		plt.xlabel("Iterations")
+
+		self._title("Energy across iterations")
+		self._save("energies")
+	
+	def plot_lenergies(self):
+		if len(self.lenergies) == 0:
+			return
+		
+		count = 0
+		for sample in self.lenergies:
+			for layer in sample:
+				filtered = [x for x in layer if x != 0]
+				plt.semilogy(filtered, c=self.colors[count % (self.nlayers-1)])
+				count += 1
+		
+
+		plt.legend([f"Layer {i}" for i in range(self.nlayers-1)])
+		plt.ylabel("Energy")
+		plt.xlabel("Iterations")
+
+		self._title("Energy in each layer across iterations")
+		self._save("lenergies")
+	
+	def plot_energy_residual(self):
+		if len(self.energies) == 0:
+			return
+		
+		for sample in self.energies:
+			filtered = [x for x in sample if x != 0]
+			res = [sample[i] - sample[i+1] for i in range(len(filtered)-1)]
+			filtered_res = [x for x in res if x != 0]
+
+			plt.semilogy(filtered_res)
+		
+		plt.ylabel("delta energy")
+		plt.xlabel("Iterations")
+
+		self._title("delta energy across iterations")
+		self._save("delta_energies")
+	
+	def plot_energy_ratio(self):
+		if len(self.lenergies) == 0:
+			return
+		
+		for sample in self.lenergies:
+			layers = np.array([np.array(x) for x in sample])
+			# layer = np.array(sample[-1])
+			total = layers.sum(axis=0)
+			# print(f"flayer: {layers[-1]}, total: {total}")
+			ratio = [layers[-1][i] / total[i] for i in range(len(total)) if total[i] != 0]
+
+			plt.plot(ratio)
+		
+		plt.ylabel("Final energy / total energy")
+		plt.xlabel("Iterations")
+
+		self._title("Ratio of final energy to total energy")
+		self._save("flenergy_ratio")
 
 	def plot_all(self):
 		self.plot_costs()
 		self.plot_preds()
 		self.plot_outputs()
+
+		self.plot_energies()
+		self.plot_lenergies()
+		self.plot_iters()
 
 if __name__ == '__main__':
 	parser = argparse.ArgumentParser()
@@ -320,3 +421,6 @@ if __name__ == '__main__':
 
 	test = TestData(f"{network}.testdata")
 	test.plot_all()
+
+	test2 = TestData(f"{network}_relaxation.testdata", append="relaxation")
+	test2.plot_all()

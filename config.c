@@ -43,10 +43,10 @@ struct config parse_config(char *filename) {
 	cJSON *net_configs = cJSON_GetObjectItem(_config, "network");
 	cJSON *oper_configs = cJSON_GetObjectItem(_config, "operations");
 	cJSON *train_configs = cJSON_GetObjectItem(_config, "training");
-	cJSON *early_stop_configs = cJSON_GetObjectItem(train_configs, "early_stop");
+	cJSON *relaxation_configs = cJSON_GetObjectItem(_config, "relaxation");
+	cJSON *early_stop_configs = cJSON_GetObjectItem(relaxation_configs, "early_stop");
 	cJSON *test_configs = cJSON_GetObjectItem(_config, "testing");
 	cJSON *name_config = cJSON_GetObjectItem(_config, "name");
-
 
 	struct config_option mnist_options[2] = {
 		{"number", mnist_numbers},
@@ -64,7 +64,6 @@ struct config parse_config(char *filename) {
 	set_enum(mnist_configs, "processing", (int *)&ret.net_params.mnist_proc, 3, mnist_proc_options, mnist_original);
 
 	set_val(net_configs, "alpha", &ret.net_params.alpha, &(double){0.05}, double_tt);
-	set_val(net_configs, "gamma", &ret.net_params.gamma, &(double){0.1}, double_tt);
 	set_val(net_configs, "tau", &ret.net_params.tau, &(size_t){128}, size_tt);
 
 	struct config_option act_options[3] = {
@@ -117,18 +116,21 @@ struct config parse_config(char *filename) {
 		}
 	}
 
+
 	set_val(train_configs, "num_samples", &ret.train_params.num_samples, &(size_t){0}, size_tt);
 	set_val(train_configs, "seed", &ret.train_params.seed, &(size_t){0}, size_tt);
-	set_val(train_configs, "gamma_rate", &ret.train_params.gamma_rate, &(double){0}, double_tt);
 	set_val(train_configs, "test_samples", &ret.train_params.test_samples, &(size_t){0}, size_tt);
 	set_val(train_configs, "logging", &ret.train_params.logging, &(bool){true}, bool_tt);
 
+	
+	set_val(relaxation_configs, "gamma", &ret.relax_params.gamma, &(double){0.1}, double_tt);
+	set_val(relaxation_configs, "gamma_rate", &ret.relax_params.gamma_rate, &(double){0}, double_tt);
 	if (early_stop_configs) {
-		set_val(early_stop_configs, "gamma_count", &ret.train_params.gamma_count, &(size_t){0}, size_tt);
-		set_val(early_stop_configs, "energy_residual", &ret.train_params.energy_res, &(double){0}, double_tt);
+		set_val(early_stop_configs, "gamma_count", &ret.relax_params.gamma_count, &(size_t){0}, size_tt);
+		set_val(early_stop_configs, "energy_residual", &ret.relax_params.energy_res, &(double){0}, double_tt);
 	}
 
-	set_val(test_configs, "num_samples_per_target", &ret.test_params.num_samples, &(size_t){0}, size_tt);
+	set_val(test_configs, "num_samples", &ret.test_params.num_samples, &(size_t){0}, size_tt);
 	set_val(test_configs, "logging", &ret.test_params.logging, &(bool){true}, bool_tt);
 
 	if (name_config) {
@@ -162,6 +164,10 @@ struct config parse_config(char *filename) {
 		strcpy(ret.net_name, tempstr);
 	}
 
+	ret.train_params.relax_params = ret.relax_params;
+	ret.test_params.relax_params = ret.relax_params;
+	ret.net_params.relax_params = ret.relax_params;
+
 	return ret;
 }
 
@@ -178,6 +184,13 @@ void save_config(struct config config, char *filename) {
 	cJSON *seed_config = cJSON_GetObjectItem(training_config, "seed");
 	if (cJSON_GetNumberValue(seed_config) == 0) 
 		cJSON_SetNumberValue(seed_config, config.train_params.seed);
+	
+	cJSON *network_config = cJSON_GetObjectItem(_config, "network");
+	cJSON *layers_config = cJSON_GetObjectItem(network_config, "layers");
+	cJSON *first_layer = cJSON_CreateNumber(config.net_params.lengths[0]);
+	cJSON *last_layer = cJSON_CreateNumber(config.net_params.lengths[config.net_params.nlayers-1]);
+	cJSON_InsertItemInArray(layers_config, 0, first_layer);
+	cJSON_AddItemToArray(layers_config, last_layer);
 	
 
 	char *print = cJSON_Print(_config);
@@ -210,7 +223,7 @@ void print_config(struct config config) {
 	}
 
 	printf("NET alpha: %f\n", config.net_params.alpha);
-	printf("NET gamma: %f\n", config.net_params.gamma);
+	printf("NET gamma: %f\n", config.relax_params.gamma);
 	printf("NET tau: %ld\n", config.net_params.tau);
 	printf("NET activation: ");
 	switch (config.net_params.act) {
