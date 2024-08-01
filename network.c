@@ -5,7 +5,7 @@
 #include "include/savefiles.h"
 // local header
 
-#define SAVESIZET(f, x)	fwrite(&x, sizeof(size_t), 1, f)
+// #define SAVESIZET(f, x)	fwrite(&x, sizeof(size_t), 1, f)
 
 struct _network {
 	gsl_matrix **weights;
@@ -91,26 +91,49 @@ int save_network(char *filename) {
 		return 1;
 	}
 
-	size_t filetype = SAVE_NETWORK;
+	size_t data[6][3] = {
+		{SAVE_TYPE, SAVE_SIZET, SAVE_NETWORK},
+		{SAVE_MNIST_TYPE, SAVE_SIZET, _net.params.mnist},
+		{SAVE_MNIST_PROC, SAVE_SIZET, _net.params.mnist_proc},
+		// {SAVE_ALPHA, SAVE_DOUBLET, _net.params.alpha},
+		{SAVE_TAU, SAVE_SIZET, _net.params.tau},
+		{SAVE_ACT, SAVE_SIZET, _net.params.act},
+		{SAVE_WEIGHTS_INIT, SAVE_SIZET, _net.params.weights},
+		{SAVE_NLAYERS, SAVE_SIZET, _net.params.nlayers},
+		{SAVE_NTARGETS, SAVE_SIZET, _net.params.ntargets}
+	};
 
-	fwrite(&filetype, sizeof(size_t), 1, file);
-	fwrite(&_net.params.mnist, sizeof(mnist_db), 1, file);
-	fwrite(&_net.params.mnist_proc, sizeof(mnist_processing), 1, file);
+	// printf("DOUBLECHECK: alpha = %f %p\n", data[3][2], &data[3][2]);
+	save_data(SAVE_ARRAY, 0, &data, 0, 6, NULL, file);
+	save_data(SAVE_ALPHA, SAVE_DOUBLET, &_net.params.alpha, 0, 1, NULL, file);
+	gsl_vector_ulong_view lengths = gsl_vector_ulong_view_array(_net.params.lengths, _net.params.nlayers);
+	save_data(SAVE_LAYERS, SAVE_SIZET, &lengths.vector, 1, 1, PS(1), file);
 
-	fwrite(&_net.params.relax_params.gamma, sizeof(double), 1, file);
-	fwrite(&_net.params.alpha, sizeof(double), 1, file);
-	fwrite(&_net.params.tau, sizeof(size_t), 1, file);
-	fwrite(&_net.params.act, sizeof(enum activation), 1, file);
-	fwrite(&_net.params.weights, sizeof(enum weights_init), 1, file);
+	gsl_vector_ulong_view targets = gsl_vector_ulong_view_array(_net.params.targets, _net.params.ntargets);
+	save_data(SAVE_TARGETS, SAVE_SIZET, &targets.vector, 1, 1, PS(1), file);
 
-	fwrite(&_net.params.nlayers, sizeof(size_t), 1, file);
-	fwrite(_net.params.lengths, sizeof(size_t), _net.params.nlayers, file);
+	save_data(SAVE_WEIGHTS, SAVE_DOUBLET, _net.weights, 2, 1, PS(_net.params.nlayers-1), file);
+
+	// size_t filetype = SAVE_NETWORK;
+
+	// fwrite(&filetype, sizeof(size_t), 1, file);
+	// fwrite(&_net.params.mnist, sizeof(mnist_db), 1, file);
+	// fwrite(&_net.params.mnist_proc, sizeof(mnist_processing), 1, file);
+
+	// fwrite(&_net.params.relax_params.gamma, sizeof(double), 1, file);
+	// fwrite(&_net.params.alpha, sizeof(double), 1, file);
+	// fwrite(&_net.params.tau, sizeof(size_t), 1, file);
+	// fwrite(&_net.params.act, sizeof(enum activation), 1, file);
+	// fwrite(&_net.params.weights, sizeof(enum weights_init), 1, file);
+
+	// fwrite(&_net.params.nlayers, sizeof(size_t), 1, file);
+	// fwrite(_net.params.lengths, sizeof(size_t), _net.params.nlayers, file);
 	
-	fwrite(&_net.params.ntargets, sizeof(size_t), 1, file);
-	fwrite(_net.params.targets, sizeof(size_t), _net.params.ntargets, file);
+	// fwrite(&_net.params.ntargets, sizeof(size_t), 1, file);
+	// fwrite(_net.params.targets, sizeof(size_t), _net.params.ntargets, file);
 
-	for (int i = 0; i < _net.params.nlayers-1; i++)
-		mat2file(_net.weights[i], SAVE_NET_WEIGHTS, file);
+	// for (int i = 0; i < _net.params.nlayers-1; i++)
+	// 	mat2file(_net.weights[i], file);
 	
 	fclose(file);
 }
@@ -375,31 +398,38 @@ int save_traindata(struct traindata *data, char *filename) {
 		return 2;
 	}
 
-	size_t filetype = SAVE_TRAIN;
+	save_data(SAVE_TYPE, SAVE_SIZET, PS(SAVE_TRAIN), 0, 1, NULL, file);
+	save_data(SAVE_DELTAW_MAGS, SAVE_DOUBLET, data->delta_w_mags, 1, 1, PS(_net.params.nlayers-1), file);
+	save_data(SAVE_ITER_COUNTS, SAVE_DOUBLET, data->iter_counts, 1, 1, PS(1), file);
+	save_data(SAVE_ENERGIES, SAVE_DOUBLET, data->energies, 1, 1, PS(data->num_samples), file);
+	save_data(SAVE_LENERGIES, SAVE_DOUBLET, data->lenergies, 1, 2, (size_t[]){data->num_samples, _net.params.nlayers-1}, file);
+	save_data(SAVE_COSTS, SAVE_DOUBLET, data->train_costs, 1, 1, PS(1), file);
 
-	fwrite(&(size_t){SAVE_TRAIN}, sizeof(size_t), 1, file);
-	fwrite(&data->num_samples, sizeof(size_t), 1, file);
-	fwrite(&_net.params.nlayers, sizeof(size_t), 1, file);
-	fwrite(&_net.params.ntargets, sizeof(size_t), 1, file);
-	fwrite(_net.params.targets, sizeof(size_t), _net.params.ntargets, file);
+// 	size_t filetype = SAVE_TRAIN;
 
-	printf("Starting to write traindata\n");
-	vecs2file(data->delta_w_mags, SAVE_TRAIN_DELTA_WMAGS, 1, &(size_t){_net.params.nlayers-1}, file);
-	printf("wrote deltamags\n");
-	vecs2file(&data->iter_counts, SAVE_TRAIN_ITER_COUNTS, 1, &(size_t){1}, file);
-	printf("wrote itercounts\n");
-	vecs2file(data->energies, SAVE_TRAIN_ENERGIES, 1, &(size_t){data->num_samples}, file);
-	printf("wrote energies\n");
+// 	fwrite(&(size_t){SAVE_TRAIN}, sizeof(size_t), 1, file);
+// 	fwrite(&data->num_samples, sizeof(size_t), 1, file);
+// 	fwrite(&_net.params.nlayers, sizeof(size_t), 1, file);
+// 	fwrite(&_net.params.ntargets, sizeof(size_t), 1, file);
+// 	fwrite(_net.params.targets, sizeof(size_t), _net.params.ntargets, file);
+
+// 	printf("Starting to write traindata\n");
+// 	vecs2file(data->delta_w_mags, SAVE_TRAIN_DELTA_WMAGS, 1, &(size_t){_net.params.nlayers-1}, file);
+// 	printf("wrote deltamags\n");
+// 	vecs2file(&data->iter_counts, SAVE_TRAIN_ITER_COUNTS, 1, &(size_t){1}, file);
+// 	printf("wrote itercounts\n");
+// 	vecs2file(data->energies, SAVE_TRAIN_ENERGIES, 1, &(size_t){data->num_samples}, file);
+// 	printf("wrote energies\n");
 	
-	// fclose(file);
-	// return 0;
+// 	// fclose(file);
+// 	// return 0;
 
-	size_t dims[2] = {data->num_samples, _net.params.nlayers-1};
-	vecs2file(data->lenergies, SAVE_TRAIN_LENERGIES, 2, dims, file);
-	printf("wrote lenergies\n");
+// 	size_t dims[2] = {data->num_samples, _net.params.nlayers-1};
+// 	vecs2file(data->lenergies, SAVE_TRAIN_LENERGIES, 2, dims, file);
+// 	printf("wrote lenergies\n");
 
-	vecs2file(&data->train_costs, SAVE_TRAIN_TRAINCOSTS, 1, &(size_t){1}, file);
-	printf("Finished writing traindata\n");
+// 	vecs2file(&data->train_costs, SAVE_TRAIN_TRAINCOSTS, 1, &(size_t){1}, file);
+// 	printf("Finished writing traindata\n");
 
 	fclose(file);
 	return 0;
@@ -577,30 +607,41 @@ int save_testdata(struct testdata *data, char *filename) {
 		return 2;
 	}
 
-	size_t filetype = SAVE_TEST;
+	save_data(SAVE_TYPE, SAVE_SIZET, PS(SAVE_TEST), 0, 1, NULL, file);
 
-	fwrite(&filetype, sizeof(size_t), 1, file);
-	fwrite(&data->num_samples, sizeof(size_t), 1, file);
-	fwrite(&_net.params.ntargets, sizeof(size_t), 1, file);
-	fwrite(_net.params.targets, sizeof(size_t), _net.params.ntargets, file);
-	fwrite(&data->num_correct, sizeof(size_t), 1, file);
+	save_data(SAVE_LABELS, SAVE_DOUBLET, data->labels, 1, 1, PS(1), file);
+	save_data(SAVE_PREDICTIONS, SAVE_DOUBLET, data->predictions, 1, 1, PS(1), file);
+	save_data(SAVE_COSTS, SAVE_DOUBLET, data->costs, 1, 1, PS(_net.params.ntargets), file);
+	save_data(SAVE_OUTPUTS, SAVE_DOUBLET, data->outputs, 1, 1, PS(data->num_samples), file);
+	save_data(SAVE_ENERGIES, SAVE_DOUBLET, data->energies, 1, 1, PS(data->num_samples), file);
+	save_data(SAVE_LENERGIES, SAVE_DOUBLET, data->lenergies, 1, 2, (size_t[]){data->num_samples, _net.params.nlayers-1}, file);
+	save_data(SAVE_ITER_COUNTS, SAVE_DOUBLET, data->iter_counts, 1, 1, PS(1), file);
 
-	vecs2file(&data->labels, SAVE_TEST_LABELS, 1, &(size_t){1}, file);
-	vecs2file(&data->predictions, SAVE_TEST_PREDICTIONS, 1, &(size_t){1}, file);
-	vecs2file(data->costs, SAVE_TEST_COSTS, 1, &_net.params.ntargets, file);
-	vecs2file(data->outputs, SAVE_TEST_OUTPUTS, 1, &data->num_samples, file);
+// 	size_t filetype = SAVE_TEST;
 
-	if (data->energies)
-		vecs2file(data->energies, SAVE_TRAIN_ENERGIES, 1, &data->num_samples, file);
+// 	fwrite(&filetype, sizeof(size_t), 1, file);
+// 	fwrite(&data->num_samples, sizeof(size_t), 1, file);
+// 	fwrite(&_net.params.ntargets, sizeof(size_t), 1, file);
+// 	fwrite(_net.params.targets, sizeof(size_t), _net.params.ntargets, file);
+// 	fwrite(&data->num_correct, sizeof(size_t), 1, file);
+
+// 	vecs2file(&data->labels, SAVE_TEST_LABELS, 1, &(size_t){1}, file);
+// 	vecs2file(&data->predictions, SAVE_TEST_PREDICTIONS, 1, &(size_t){1}, file);
+// 	vecs2file(data->costs, SAVE_TEST_COSTS, 1, &_net.params.ntargets, file);
+// 	vecs2file(data->outputs, SAVE_TEST_OUTPUTS, 1, &data->num_samples, file);
+
+// 	if (data->energies)
+// 		vecs2file(data->energies, SAVE_TRAIN_ENERGIES, 1, &data->num_samples, file);
 	
-	if (data->lenergies) {
-		size_t dims[2] = {data->num_samples, _net.params.nlayers-1};
-		vecs2file(data->lenergies, SAVE_TRAIN_LENERGIES, 2, dims, file);
-	}
-	if (data->iter_counts)
-		vecs2file(&data->iter_counts, SAVE_TRAIN_ITER_COUNTS, 1, &(size_t){1}, file);
+// 	if (data->lenergies) {
+// 		size_t dims[2] = {data->num_samples, _net.params.nlayers-1};
+// 		vecs2file(data->lenergies, SAVE_TRAIN_LENERGIES, 2, dims, file);
+// 	}
+// 	if (data->iter_counts)
+// 		vecs2file(&data->iter_counts, SAVE_TRAIN_ITER_COUNTS, 1, &(size_t){1}, file);
 	
 	fclose(file);
+	return 0;
 }
 
 void free_testdata(struct testdata *data) {

@@ -75,7 +75,7 @@ int main(int argc, char **argv) {
 	}
 
 	if (config.should_test) {
-		struct testdata *test_results = test(config.test_params);
+		struct testdata *test_results = test(config.test_params, false);
 		
 		if (test_results) {
 			char testfile[512];

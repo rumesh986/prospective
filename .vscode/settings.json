@@ -4,6 +4,14 @@
 		"getopt.h": "c",
 		"all.h": "c",
 		"limits": "c",
-		"gsl_matrix.h": "c"
+		"gsl_matrix.h": "c",
+		"file_utils.h": "c",
+		"network_utils.h": "c",
+		"array": "c",
+		"compare": "c",
+		"functional": "c",
+		"tuple": "c",
+		"type_traits": "c",
+		"utility": "c"
 	}
 }

@@ -4,10 +4,16 @@ LDLIBS = -lgsl -lgslcblas -lm -lcjson
 DCFLAGS = -ggdb
 
 FILE_BASE_NAME = main
+
+FILES = $(FILE_BASE_NAME) utils mnist network network_utils config 
+# file_utils
 C_FILE = $(FILE_BASE_NAME).c
 O_FILE = $(FILE_BASE_NAME).o
 
-O_FILES = $(O_FILE) utils.o mnist.o network.o network_utils.o config.o
+# O_FILES = $(O_FILE) utils.o mnist.o network.o network_utils.o config.o file_utils.o
+O_FILES = $(addsuffix .o, $(FILES))
+C_FILES = $(addsuffix .c, $(FILES))
+H_FILES = $(addprefic ./include/, $(addsuffix .h, $(FILES))))
 # network.o activations.o
 
 %.o: %.c
@@ -30,7 +36,7 @@ run: build
 
 default: build
 	./$(FILE_BASE_NAME) -c config.json -s
-	./processing
+	./processing2
 
 gdb: build
 	gdb ./$(FILE_BASE_NAME)
@@ -39,6 +45,6 @@ valgrind: build
 	valgrind --leak-check=full --track-origins=yes --show-leak-kinds=all ./$(FILE_BASE_NAME) $(INPUT)
 
 clean:
-	rm $(FILE_BASE_NAME) $(O_FILES)
+	rm -f $(FILE_BASE_NAME) $(O_FILES)
 
 rebuild: clean build

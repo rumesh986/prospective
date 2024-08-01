@@ -8,401 +8,343 @@ import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
 
-SAVE_NETWORK			= 0x01
-SAVE_TRAIN				= 0x02
-SAVE_TEST				= 0x03
-SAVE_NET_WEIGHTS		= 0x11
-SAVE_NET_TARGETS		= 0x12
-SAVE_TRAIN_DELTA_WMAGS	= 0x21
-SAVE_TRAIN_ITER_COUNTS	= 0x22
-SAVE_TRAIN_ENERGIES		= 0x23
-SAVE_TRAIN_LENERGIES	= 0x24
-SAVE_TRAIN_TRAINCOSTS	= 0x25
-SAVE_TEST_LABELS		= 0x31
-SAVE_TEST_PREDICTIONS	= 0x32
-SAVE_TEST_OUTPUTS		= 0x33
-SAVE_TEST_COSTS			= 0x34
+SAVE_NETWORK		= 0x01
+SAVE_TRAIN			= 0x02
+SAVE_TEST			= 0x03
+SAVE_ARRAY			= 0x04
+SAVE_TYPE			= 0x11
+SAVE_MNIST_TYPE		= 0x12
+SAVE_MNIST_PROC		= 0x13
+SAVE_GAMMA			= 0x14
+SAVE_ALPHA			= 0x15
+SAVE_TAU			= 0x16
+SAVE_ACT			= 0x17
+SAVE_WEIGHTS_INIT	= 0x18
+SAVE_NLAYERS		= 0x19
+SAVE_LAYERS			= 0x1A
+SAVE_NTARGETS		= 0x1B
+SAVE_TARGETS		= 0x1C
+SAVE_WEIGHTS		= 0x1D
+SAVE_NUM_SAMPLES	= 0x1E
+SAVE_DELTAW_MAGS	= 0x1F
+SAVE_ITER_COUNTS	= 0x20
+SAVE_ENERGIES		= 0x21
+SAVE_LENERGIES		= 0x22
+SAVE_TRAIN_COSTS	= 0x23
+SAVE_COSTS			= 0x24
+SAVE_LABELS			= 0x25
+SAVE_PREDICTIONS	= 0x26
+SAVE_OUTPUTS		= 0x27
+SAVE_NUM_CORRECT	= 0x28
+SAVE_SIZET			= 0x31
+SAVE_DOUBLET		= 0x32
 
 class FileReader:
 	def __init__(self, filename):
+		self.filename = filename
 		self.dir, self.netname = filename.rsplit('/', 1)
 		self.netname = self.netname.split('.')[0]
 
-		self.f = open(filename, "rb")
+		with open(filename, "rb") as f:
+			self.f = f.read()
+		
+		self.pos = 0
 	
 	def get_name(self):
 		return self.dir, self.netname
-	
-	def read(self, n, squeeze=True):
-		data = struct.unpack(f'{n}Q', self.f.read(8*n))
+
+	def _read(self, n, dtype=SAVE_SIZET, squeeze=True):
+		start = self.pos
+		self.pos += 8*n
+
+		if dtype == SAVE_SIZET:
+			read_str = f'{n}Q'
+		elif dtype == SAVE_DOUBLET:
+			read_str = f'{n}d'
+		else:
+			print(f"Unkown data type specified {dtype} for scalar, defaulting to unsigned long")
+			read_str = f'{n}Q'
+
+		data = struct.unpack(read_str, self.f[start:self.pos])
+
 		return data[0] if n == 1 and squeeze else data
 
-	def read_mat(self):
-		size = self.read(2)
-		ret = np.fromfile(self.f, dtype='double', count=size[0]*size[1]).reshape(size)
-		return ret[0] if size[0] == 1 else ret
+	def read_data(self, typelist):
+		ret = {}
+		while self.pos != len(self.f):
+			label, dtype, tensor_dim, ndims = self._read(4)
+			# print(f"label: {label}, tdim: {tensor_dim}, ndims: {ndims}")
+
+			if tensor_dim == 0:
+				ret[label] = [self._read(1, dtype=dtype)]
+				continue
+			
+			dims = self._read(ndims, squeeze=False)
+
+			if label in typelist:
+				ret[label] = []
+				self._recursive_read(ret[label], dtype, dims, 0)
+			else:
+				self._recursive_read(None, dtype, dims, 0)
+
+		for key in ret.keys():
+			if len(ret[key]) == 1:
+				ret[key] = ret[key][0]
+
+		return ret
 	
-	def _recursive_read(self, data, dims, depth):
+	def _recursive_read(self, data, dtype, dims, depth):
 		for i in range(dims[depth]):
 			if depth == len(dims)-1:
-				data.append(self.read_mat())
+				mat = self._read_mat(dtype)
+				if data is not None:
+					data.append(mat)
 			else:
-				data.append([])
-				self._recursive_read(data[i], dims, depth+1)
+				if data is not None:
+					data.append([])
+				self._recursive_read(data[i] if data is not None else None, dtype, dims, depth+1)
+	
+	def _read_mat(self, dtype):
+		size = self._read(2)
+		count = size[0] * size[1]
 
-	def read_data(self, format):
-		start_pos = self.f.tell()
-		self.f.seek(0, 2)
-		end_pos = self.f.tell()
-		self.f.seek(start_pos)
-
-		while self.f.tell() != end_pos:
-			try:
-				type, ndims = self.read(2)
-			except:
-				return
-			if type not in format.keys():
-				continue
-
-			dims = self.read(ndims, squeeze=False)
-
-			format[type].append([])
-			self._recursive_read(format[type][0], dims, 0)
+		if dtype == SAVE_SIZET:
+			rdtype = np.uint64
+		elif dtype == SAVE_DOUBLET:
+			rdtype = np.float64
+		else:
+			print(f"Unkown data type specified {dtype} for matrix, defaulting to double")
+			rdtype = np.float64
 
 
-	def close(self):
-		self.f.close()
+		ret = np.frombuffer(self.f, dtype=rdtype, offset=self.pos, count=count).reshape(size)
+		self.pos += 8 * count
+		return ret[0] if size[0] == 1 else ret
 
 
-
-class TrainData:
+class Network:
 	def __init__(self, filename):
 		self.file = FileReader(filename)
 		self.dir, self.netname = self.file.get_name()
+		data = self.file.read_data([SAVE_TYPE, SAVE_MNIST_TYPE, SAVE_MNIST_PROC, SAVE_GAMMA, SAVE_ALPHA, SAVE_ACT, SAVE_WEIGHTS_INIT, SAVE_LAYERS, SAVE_TARGETS, SAVE_WEIGHTS])
 
-		self.filetype, self.num_samples, self.nlayers, self.ntargets = self.file.read(4)
-		self.targets = self.file.read(self.ntargets)
+		if (data[SAVE_TYPE] != SAVE_NETWORK):
+			print("ERROR: filetype does not match class")
+			exit(1)
+		
+		self.mnist_type = data.get(SAVE_MNIST_TYPE)
+		self.mnist_proc = data.get(SAVE_MNIST_PROC)
+		self.gamma = data.get(SAVE_GAMMA)
+		self.alpha = data.get(SAVE_ALPHA)
+		self.act = data.get(SAVE_ACT)
+		self.weights_init = data.get(SAVE_WEIGHTS_INIT)
+		self.layers = data.get(SAVE_LAYERS)
+		self.targets = data.get(SAVE_TARGETS)
+		self.weights = data.get(SAVE_WEIGHTS)
+		self.nlayers = len(self.layers)
+		self.ntargets = len(self.targets)
 
-		self.delta_w_mags = []
-		self.iter_counts = []
-		self.energies = []
-		self.lenergies = []
-		self.train_costs = []
-		read_dict = {
-			SAVE_TRAIN_DELTA_WMAGS: self.delta_w_mags,
-			SAVE_TRAIN_ITER_COUNTS: self.iter_counts,
-			SAVE_TRAIN_TRAINCOSTS: self.train_costs,
-			SAVE_TRAIN_ENERGIES: self.energies,
-			SAVE_TRAIN_LENERGIES: self.lenergies
-		}
+class TrainData:
+	def __init__(self, filename, net):
+		self.file = FileReader(filename)
+		self.net = net
+		self.plt = Plotter(net, prefix="Train")
 
-		self.file.read_data(read_dict)
-		self.file.close()
+		data = self.file.read_data([SAVE_TYPE, SAVE_DELTAW_MAGS, SAVE_ITER_COUNTS, SAVE_ENERGIES, SAVE_LENERGIES, SAVE_COSTS])
 
-		self.delta_w_mags = self.delta_w_mags[0]
-		self.iter_counts= self.iter_counts[0][0]
-		self.train_costs = self.train_costs[0][0]
-		self.energies= self.energies[0]
-		self.lenergies = self.lenergies[0]
+		if data[SAVE_TYPE] != SAVE_TRAIN:
+			print("Error: Filetype does not match class")
+			exit(1)
+		
+		self.deltaw_mags = data.get(SAVE_DELTAW_MAGS)
+		self.iter_counts = data.get(SAVE_ITER_COUNTS)
+		self.energies = data.get(SAVE_ENERGIES)
+		self.lenergies = data.get(SAVE_LENERGIES)
+		self.train_costs = data.get(SAVE_COSTS)
+	
+	def plot_all(self):
+		if self.deltaw_mags is not None:
+			self.plt.plot_dw(self.deltaw_mags)
+		if self.iter_counts is not None:
+			self.plt.plot_iters(self.iter_counts)
+		if self.train_costs is not None:
+			self.plt.plot_costs([self.train_costs])
+		
+		if self.energies is not None:
+			self.plt.plot_energy_res(self.energies)
+			self.plt.plot_energies(self.energies)
+		
+		if self.lenergies is not None:
+			self.plt.plot_energy_ratio(self.lenergies)
+			self.plt.plot_lenergies(self.lenergies)
 
-		self.colors = ['black', 'blue', 'red', 'green', 'yellow', 'orange', 'pink', 'brown', 'cyan', 'magenta']
+class TestData:
+	def __init__(self, filename, net):
+		self.file = FileReader(filename)
+		self.net = net
+		self.plt = Plotter(net, prefix="Test")
+
+		data = self.file.read_data([SAVE_TYPE, SAVE_LABELS, SAVE_PREDICTIONS, SAVE_COSTS, SAVE_OUTPUTS, SAVE_ENERGIES, SAVE_LENERGIES, SAVE_ITER_COUNTS])
+
+		if (data[SAVE_TYPE] != SAVE_TEST):
+			print("ERROR: filetype does not match class")
+			exit(1)
+
+		self.labels = data.get(SAVE_LABELS)
+		self.predictions = data.get(SAVE_PREDICTIONS)
+		self.costs = data.get(SAVE_COSTS)
+		self.outputs = data.get(SAVE_OUTPUTS)
+		self.energies = data.get(SAVE_ENERGIES)
+		self.lenergies = data.get(SAVE_LENERGIES)
+		self.iter_counts = data.get(SAVE_ITER_COUNTS)
+
+	def plot_all(self):
+		if self.costs is not None:
+			print(self.costs)
+			self.plt.plot_costs(self.costs)
+		if self.labels is not None and self.predictions is not None:
+			self.plt.plot_preds(self.labels, self.predictions)
+		if self.outputs is not None and self.labels is not None and self.net.targets is not None:
+			self.plt.plot_outputs(self.outputs, self.labels, self.net.targets)
+		if self.iter_counts is not None:
+			self.plt.plot_iters(self.iter_counts)
+		
+		if self.energies is not None:
+			self.plt.plot_energy_res(self.energies)
+			self.plt.plot_energies(self.energies)
+		
+		if self.lenergies is not None:
+			self.plt.plot_lenergies(self.lenergies)
+			self.plt.plot_energy_ratio(self.lenergies)
+		
+class Plotter:
+	def __init__(self, net: Network, prefix=None, suffix=None):
+		self.net = net
+		self.prefix = f"{prefix}_" if prefix else ""
+		self.suffix =f"{suffix}_" if suffix else ""
+	
+		self.colors = ['blue', 'red', 'green', 'yellow', 'black', 'orange', 'pink', 'brown', 'cyan', 'magenta']
 
 	def _save(self, filename):
-		plt.savefig(f'{self.dir}/train_{filename}.png')
+		plt.savefig(f'{self.net.dir}/{self.prefix}{filename}{self.suffix}.png')
 		plt.close()
 	
 	def _title(self, title):
-		plt.title(f"{title} - {self.netname}")
-
-
-	def plot_dw(self):
-		i = 0
-		for layer in self.delta_w_mags:
-			sns.regplot(x=np.arange(len(layer)), y=layer, label=f"layer {i}", scatter_kws={
-				's': 10,
-				'alpha': 0.2
-			})
-			i += 1
-
-		plt.ylabel("Magnitude")
-		plt.xlabel("Training sample")
-		plt.yscale('log')
-		plt.legend(loc="upper right")
-		self._title("Magnitude of weight changes")
-		self._save("delta_wmags")
-
-	def plot_iters(self):
-		sns.regplot(x=np.arange(len(self.iter_counts)), y=self.iter_counts, marker='x', scatter_kws={
-			's': 10,
-			'alpha': 0.2
+		plt.title(f"{title} - {self.prefix}{self.net.netname}{self.suffix}")
+	
+	def scatter(self, y, label="", s=10, alpha=0.2, marker='x'):
+		sns.regplot(x=np.arange(len(y)), y=y, label=label, marker=marker, scatter_kws={
+			's': s,
+			'alpha': alpha
 		})
 
-		plt.ylabel("Number of iterations")
-		plt.xlabel("Training sample")
-		self._title("Number of iterations")
-		self._save("iters.png")
+	def _set_labels(self, xlabel, ylabel):
+		plt.xlabel(xlabel)
+		plt.ylabel(ylabel)
 	
-	def plot_train_costs(self):
-		plt.plot(self.train_costs)
+	def filter(self, y):
+		return [x for x in y if x != 0]
 
-		plt.xlabel("Training sample")
-		plt.ylabel("Cost")
-		
-		self._title("Cost during training")
+	def plot_dw(self, dw):
+		i = 0
+		for layer in dw:
+			self.scatter(layer, label=f"Layer {i}")
+			i += 1
+
+		plt.yscale('log')
+		plt.legend(loc='upper right')
+		self._set_labels("Magnitude", "Training Sample")
+		self._title("Magnitude of weight change")
+		self._save("deltaw_mags")
+	
+	def plot_iters(self, iters):
+		self.scatter(iters)
+
+		self._set_labels("Training Sample", "Number of iterations")
+		self._title("Number of iterations")
+		self._save("iters")
+	
+	def plot_costs(self, costs):
+		for line in costs:
+			plt.plot(line)
+
+		self._set_labels("Sample", "Cost")
+		self._title("Cost")
 		self._save("costs")
-
-	def plot_energies(self):
-		for sample in self.energies:
-			filtered = [x for x in sample if x != 0]
+	
+	def plot_energies(self, energies):
+		for sample in energies:
+			filtered = self.filter(sample)
 			plt.semilogy(filtered)
 		
-		plt.ylabel("Energy")
-		plt.xlabel("Iterations")
-
+		self._set_labels("Iteration", "Energy")
 		self._title("Energy across iterations")
 		self._save("energies")
 	
-	def plot_lenergies(self):
-		count = 0
-		for sample in self.lenergies:
+	def plot_lenergies(self, lenergies):
+		for sample in lenergies:
+			count = 0
 			for layer in sample:
-				filtered = [x for x in layer if x != 0]
-				plt.semilogy(filtered, c=self.colors[count % (self.nlayers-1)])
+				filtered = self.filter(layer)
+				plt.semilogy(filtered, c=self.colors[count])
 				count += 1
-		
-
-		plt.legend([f"Layer {i}" for i in range(self.nlayers-1)])
-		plt.ylabel("Energy")
-		plt.xlabel("Iterations")
-
+			
+		plt.legend([f"Layer {i}" for i in range(self.net.nlayers-1)])
+		self._set_labels("Iterations", "Energy")
 		self._title("Energy in each layer across iterations")
 		self._save("lenergies")
 	
-	
-	def plot_energy_residual(self):
-		for sample in self.energies:
-			filtered = [x for x in sample if x != 0]
+	def plot_energy_res(self, energies):
+		for sample in energies:
+			filtered = self.filter(sample)
 			res = [sample[i] - sample[i+1] for i in range(len(filtered)-1)]
-			filtered_res = [x for x in res if x != 0]
-
+			filtered_res = self.filter(res)
 			plt.semilogy(filtered_res)
 		
-		plt.ylabel("delta energy")
-		plt.xlabel("Iterations")
+		self._set_labels("Iterations", "delta energy")
+		self._title("Change in energy across iterations")
+		self._save("denergies")
 
-		self._title("delta energy across iterations")
-		self._save("delta_energies")
-	
-	def plot_energy_ratio(self):
-		for sample in self.lenergies:
+	def plot_energy_ratio(self, lenergies):
+		for sample in lenergies:
 			layers = np.array([np.array(x) for x in sample])
-			# layer = np.array(sample[-1])
 			total = layers.sum(axis=0)
-			# print(f"flayer: {layers[-1]}, total: {total}")
 			ratio = [layers[-1][i] / total[i] for i in range(len(total)) if total[i] != 0]
 
 			plt.plot(ratio)
-		
-		plt.ylabel("Final energy / total energy")
-		plt.xlabel("Iterations")
 
-		self._title("Ratio of final energy to total energy")
+		self._set_labels("Iterations", "Final energy / total energy")
+		self._title("Ratio of final energy ratio to total energy")
 		self._save("flenergy_ratio")
-
-	def plot_all(self):
-		self.plot_dw()
-		self.plot_iters()
-		self.plot_train_costs()
-
-		self.plot_energies()
-		self.plot_lenergies()
-		self.plot_energy_residual()
-		self.plot_energy_ratio()
-
-class TestData:
-	def __init__(self, filename, append=""):
-		self.file = FileReader(filename)
-		self.dir, self.netname = self.file.get_name()
-		self.append = append
-
-		self.filetype, self.num_samples, self.ntargets = self.file.read(3)
-		self.targets = self.file.read(self.ntargets)
-		self.num_correct = self.file.read(1)
-
-		self.labels = []
-		self.predictions = []
-		self.costs = []
-		self.outputs = []
-		self.energies = []
-		self.lenergies = []
-		self.iter_counts = []
-
-		format = {
-			SAVE_TEST_LABELS: self.labels,
-			SAVE_TEST_PREDICTIONS: self.predictions,
-			SAVE_TEST_COSTS: self.costs,
-			SAVE_TEST_OUTPUTS: self.outputs,
-			SAVE_TRAIN_ENERGIES: self.energies,
-			SAVE_TRAIN_LENERGIES: self.lenergies,
-			SAVE_TRAIN_ITER_COUNTS: self.iter_counts
-		}
-
-		self.nlayers = 4
-
-		self.file.read_data(format)
-		self.file.close()
-
-		self.labels = self.labels[0][0]
-		self.predictions = self.predictions[0][0]
-		self.costs = self.costs[0]
-		self.outputs = self.outputs[0]
-		self.energies = self.energies[0] if len(self.energies) == 1 else self.energies
-		self.lenergies = self.lenergies[0] if len(self.lenergies) == 1 else self.lenergies
-		self.iter_counts = self.iter_counts[0][0] if len(self.iter_counts) == 1 else self.iter_counts
-
-		self.colors = ['black', 'blue', 'red', 'green', 'yellow', 'orange', 'pink', 'brown', 'cyan', 'magenta']
-
-	def _save(self, filename):
-		if self.append != "":
-			plt.savefig(f'{self.dir}/test_{filename}_{self.append}.png')
-		else:
-			plt.savefig(f'{self.dir}/test_{filename}.png')
-		plt.close()
 	
-	def _title(self, title):
-		plt.title(f"{title} - {self.netname}")
+	def plot_preds(self, labels, predictions):
+		num_samples = len(labels)
+		num_correct = np.array([1 for i in range(len(labels)) if labels[i] == predictions[i]]).sum()
+		num_false = num_samples - num_correct
 
-	def plot_costs(self):
-		for item in self.costs:
-			plt.plot(item)
-		
-		plt.ylabel("Cost")
-		plt.xlabel("Testing sample")
-		
-		self._title("Final cost in testing")
-		self._save("costs")
-	
-	def plot_preds(self):
-		false = self.num_samples - self.num_correct
+		fig, (pie, tbl) = plt.subplots(1, 2, figsize=(10,5))
 
-		fig, (pie_axis, tbl_axis) = plt.subplots(1, 2, figsize=(10,5))
-		pie_axis.pie([self.num_correct, false], labels=[f"correct: {self.num_correct}", f"false: {false}"])
+		pie.pie([num_correct, num_false], labels=[f"Correct: {num_correct}", f"False: {num_false}"])
 
 		table = [
-			["total", self.num_samples],
-			["accuracy", self.num_correct / self.num_samples],
-			["",""]
+			["total", num_samples],
+			["accuracy", num_correct / num_samples]
 		]
-
-		tbl_axis.axis("off")
-		tbl_axis.table(table, loc="center")
-
+		tbl.axis("off")
+		tbl.table(table, loc="center")
 		self._title("Prediction stats")
 		self._save("preds")
 	
-	def plot_outputs(self):
-		for i in range(self.num_samples):
-			target_i = self.targets.index(self.labels[i])
-			plt.scatter(np.arange(self.ntargets), self.outputs[i], c=self.colors[target_i % self.ntargets])
+	def plot_outputs(self, outputs, labels, targets):
+		for i in range(len(labels)):
+			target, = np.where(targets == labels[i])[0]
+			plt.scatter(np.arange(len(targets)), outputs[i], c=self.colors[target % len(targets)])
 		
-		plt.legend([f"{self.targets[i]}" for i in range(self.ntargets)])
-		plt.ylabel("Neuron value")
-		plt.xlabel("Neuron")
-		
+		plt.legend([f"{targets[i]}" for i in range(len(targets))])
+
+		self._set_labels("Neuron", "Neuron activation")
 		self._title("Output vectors")
 		self._save("outputs")
-	
-	def plot_iters(self):
-		if len(self.iter_counts) == 0:
-			return
-		
-		sns.regplot(x=np.arange(len(self.iter_counts)), y=self.iter_counts, marker='x', scatter_kws={
-			's': 10,
-			'alpha': 0.2
-		})
-
-		plt.ylabel("Number of iterations")
-		plt.xlabel("Training sample")
-		self._title("Number of iterations")
-		self._save("iters")
-
-	def plot_energies(self):
-		if len(self.energies) == 0:
-			return
-		
-		for sample in self.energies:
-			filtered = [x for x in sample if x != 0]
-			plt.semilogy(filtered)
-		
-		plt.ylabel("Energy")
-		plt.xlabel("Iterations")
-
-		self._title("Energy across iterations")
-		self._save("energies")
-	
-	def plot_lenergies(self):
-		if len(self.lenergies) == 0:
-			return
-		
-		count = 0
-		for sample in self.lenergies:
-			for layer in sample:
-				filtered = [x for x in layer if x != 0]
-				plt.semilogy(filtered, c=self.colors[count % (self.nlayers-1)])
-				count += 1
-		
-
-		plt.legend([f"Layer {i}" for i in range(self.nlayers-1)])
-		plt.ylabel("Energy")
-		plt.xlabel("Iterations")
-
-		self._title("Energy in each layer across iterations")
-		self._save("lenergies")
-	
-	def plot_energy_residual(self):
-		if len(self.energies) == 0:
-			return
-		
-		for sample in self.energies:
-			filtered = [x for x in sample if x != 0]
-			res = [sample[i] - sample[i+1] for i in range(len(filtered)-1)]
-			filtered_res = [x for x in res if x != 0]
-
-			plt.semilogy(filtered_res)
-		
-		plt.ylabel("delta energy")
-		plt.xlabel("Iterations")
-
-		self._title("delta energy across iterations")
-		self._save("delta_energies")
-	
-	def plot_energy_ratio(self):
-		if len(self.lenergies) == 0:
-			return
-		
-		for sample in self.lenergies:
-			layers = np.array([np.array(x) for x in sample])
-			# layer = np.array(sample[-1])
-			total = layers.sum(axis=0)
-			# print(f"flayer: {layers[-1]}, total: {total}")
-			ratio = [layers[-1][i] / total[i] for i in range(len(total)) if total[i] != 0]
-
-			plt.plot(ratio)
-		
-		plt.ylabel("Final energy / total energy")
-		plt.xlabel("Iterations")
-
-		self._title("Ratio of final energy to total energy")
-		self._save("flenergy_ratio")
-
-	def plot_all(self):
-		self.plot_costs()
-		self.plot_preds()
-		self.plot_outputs()
-
-		self.plot_energies()
-		self.plot_lenergies()
-		self.plot_iters()
 
 if __name__ == '__main__':
 	parser = argparse.ArgumentParser()
@@ -413,14 +355,13 @@ if __name__ == '__main__':
 		folders = os.listdir('results')
 		paths = [os.path.join('results', basename) for basename in folders]
 		args.folder = f'{max(paths, key=os.path.getctime)}'
-	
+
 	network = f"{args.folder}/{[x for x in os.listdir(args.folder) if '.' not in x][0]}"
 
-	train = TrainData(f'{network}.traindata')
+	net = Network(network)
+	train = TrainData(f"{network}.traindata", net)
 	train.plot_all()
+	# print(train.lenergies)
 
-	test = TestData(f"{network}.testdata")
+	test = TestData(f"{network}.testdata", net)
 	test.plot_all()
-
-	test2 = TestData(f"{network}_relaxation.testdata", append="relaxation")
-	test2.plot_all()
