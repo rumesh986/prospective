@@ -3,9 +3,8 @@
 
 #include "include/all.h"
 #include "include/savefiles.h"
-// local header
 
-// #define SAVESIZET(f, x)	fwrite(&x, sizeof(size_t), 1, f)
+// local header
 
 struct _network {
 	gsl_matrix **weights;
@@ -21,7 +20,6 @@ struct relaxation {
 
 double _calc_energy(gsl_vector **layers);
 void _calc_lenergy(gsl_vector **layers, gsl_vector **lenergies, size_t iter);
-// struct relaxation _relaxation(gsl_vector **layers, gsl_vector **epsilons, bool prediction, double gamma, double gamma_rate, double energy_res, int reduction_count, bool logging);
 struct relaxation _relaxation(gsl_vector **layers, gsl_vector **epsilons, bool prediction, struct relaxation_params relax_params, bool logging);
 
 // main code
@@ -113,27 +111,6 @@ int save_network(char *filename) {
 	save_data(SAVE_TARGETS, SAVE_SIZET, &targets.vector, 1, 1, PS(1), file);
 
 	save_data(SAVE_WEIGHTS, SAVE_DOUBLET, _net.weights, 2, 1, PS(_net.params.nlayers-1), file);
-
-	// size_t filetype = SAVE_NETWORK;
-
-	// fwrite(&filetype, sizeof(size_t), 1, file);
-	// fwrite(&_net.params.mnist, sizeof(mnist_db), 1, file);
-	// fwrite(&_net.params.mnist_proc, sizeof(mnist_processing), 1, file);
-
-	// fwrite(&_net.params.relax_params.gamma, sizeof(double), 1, file);
-	// fwrite(&_net.params.alpha, sizeof(double), 1, file);
-	// fwrite(&_net.params.tau, sizeof(size_t), 1, file);
-	// fwrite(&_net.params.act, sizeof(enum activation), 1, file);
-	// fwrite(&_net.params.weights, sizeof(enum weights_init), 1, file);
-
-	// fwrite(&_net.params.nlayers, sizeof(size_t), 1, file);
-	// fwrite(_net.params.lengths, sizeof(size_t), _net.params.nlayers, file);
-	
-	// fwrite(&_net.params.ntargets, sizeof(size_t), 1, file);
-	// fwrite(_net.params.targets, sizeof(size_t), _net.params.ntargets, file);
-
-	// for (int i = 0; i < _net.params.nlayers-1; i++)
-	// 	mat2file(_net.weights[i], file);
 	
 	fclose(file);
 }
@@ -161,8 +138,7 @@ struct traindata *train(struct training_params train_params) {
 		if (data[i].count < max_count)
 			max_count = data[i].count;
 	}
-	// size_t num_samples = max_count * _net.params.ntargets;
-	// size_t num_samples = 100;
+
 	size_t num_samples = train_params.num_samples;
 	if (num_samples == 0)
 		num_samples = max_count * _net.params.ntargets;
@@ -238,76 +214,11 @@ struct traindata *train(struct training_params train_params) {
 		// gsl_vector_memcpy(epsilons[0], layers[0]);
 
 		// relaxation stage
-		// print_vec(layers[1], "Before", false);
 		struct relaxation relaxed = _relaxation(layers, epsilons, false, train_params.relax_params, train_params.logging);
-		// print_vec(layers[1], "After", false);
 
 		energies[i] = relaxed.energies;
 		ret->lenergies[i] = relaxed.lenergies;
 		gsl_vector_set(ret->iter_counts, i, relaxed.iters);
-		// for (int t = 0; t < _net.params.tau; t++) {
-		// 	// calculate epsilons (l = 1:n)
-		// 	for (int l = 0; l < _net.params.nlayers-1; l++) {
-		// 		gsl_vector *act = activation(layers[l], _net.params.act);
-		// 		gsl_vector_memcpy(epsilons[l+1], layers[l+1]);
-		// 		gsl_blas_dgemv(CblasNoTrans, -1.0, _net.weights[l], act, 1.0, epsilons[l+1]);
-
-		// 		gsl_vector_free(act);
-		// 	}
-			
-
-		// 	// modify x (layers)
-		// 	for (int l = 1; l < _net.params.nlayers-1; l++) {
-		// 		gsl_vector *act_deriv = activation_deriv(layers[l], _net.params.act);
-
-		// 		gsl_blas_dgemv(CblasTrans, gamma, _net.weights[l], epsilons[l+1], 0.0, deltax[l]);
-		// 		gsl_vector_mul(deltax[l], act_deriv);
-
-		// 		gsl_blas_daxpy(-gamma, epsilons[l], deltax[l]);
-
-		// 		gsl_vector_add(layers[l], deltax[l]);
-
-		// 		gsl_vector_free(act_deriv);
-		// 	}
-			
-		// 	// for (int l = 0; l < _net.params.nlayers; l++)
-		// 		// gsl_vector_set_zero(deltax[l]);
-			
-		// 	gsl_vector_set(energies[i], t, _calc_energy(layers));
-		// 	if (train_params.logging)
-		// 		_calc_lenergy(layers, ret->lenergies[i], t);
-			
-		// 	// early stop condition
-		// 	if (t == 0)
-		// 		continue;
-
-		// 	// printf("Energies: %f %f\n", gsl_vector_get(ret->energies[i], t), gsl_vector_get(ret->energies[i], t-1));
-		// 	double diff = gsl_vector_get(energies[i], t-1) - gsl_vector_get(energies[i], t);
-		// 	if (diff < train_params.energy_res) {
-		// 		printf("[%5d] Energy below threshold, assuming converged\n", i);
-		// 		gamma = _net.params.gamma;
-		// 		gsl_vector_set(ret->iter_counts, i, t);
-		// 		break;
-		// 	}
-
-		// 	if ( diff < 0) {
-		// 		printf("Energy not reducting\n");
-		// 		if (reduction_count > 0) {
-		// 			gamma *= train_params.gamma_rate;
-		// 			reduction_count--;
-		// 		} else {
-		// 			gamma = _net.params.gamma;
-		// 			printf("Stopping early\n");
-		// 			gsl_vector_set(ret->iter_counts, i, t);
-		// 			break;
-		// 		}
-		// 	}
-		// } // relaxation (t)
-
-		// if (train_params.logging) {
-		// 	if (gsl_vector_get(ret->iter_counts, i) == 0)
-		// 		gsl_vector_set(ret->iter_counts, i, _net.params.tau-1);
-		// }
 
 		// modify weights
 		for (int l = 0; l < _net.params.nlayers-1; l++) {
@@ -405,32 +316,6 @@ int save_traindata(struct traindata *data, char *filename) {
 	save_data(SAVE_LENERGIES, SAVE_DOUBLET, data->lenergies, 1, 2, (size_t[]){data->num_samples, _net.params.nlayers-1}, file);
 	save_data(SAVE_COSTS, SAVE_DOUBLET, data->train_costs, 1, 1, PS(1), file);
 
-// 	size_t filetype = SAVE_TRAIN;
-
-// 	fwrite(&(size_t){SAVE_TRAIN}, sizeof(size_t), 1, file);
-// 	fwrite(&data->num_samples, sizeof(size_t), 1, file);
-// 	fwrite(&_net.params.nlayers, sizeof(size_t), 1, file);
-// 	fwrite(&_net.params.ntargets, sizeof(size_t), 1, file);
-// 	fwrite(_net.params.targets, sizeof(size_t), _net.params.ntargets, file);
-
-// 	printf("Starting to write traindata\n");
-// 	vecs2file(data->delta_w_mags, SAVE_TRAIN_DELTA_WMAGS, 1, &(size_t){_net.params.nlayers-1}, file);
-// 	printf("wrote deltamags\n");
-// 	vecs2file(&data->iter_counts, SAVE_TRAIN_ITER_COUNTS, 1, &(size_t){1}, file);
-// 	printf("wrote itercounts\n");
-// 	vecs2file(data->energies, SAVE_TRAIN_ENERGIES, 1, &(size_t){data->num_samples}, file);
-// 	printf("wrote energies\n");
-	
-// 	// fclose(file);
-// 	// return 0;
-
-// 	size_t dims[2] = {data->num_samples, _net.params.nlayers-1};
-// 	vecs2file(data->lenergies, SAVE_TRAIN_LENERGIES, 2, dims, file);
-// 	printf("wrote lenergies\n");
-
-// 	vecs2file(&data->train_costs, SAVE_TRAIN_TRAINCOSTS, 1, &(size_t){1}, file);
-// 	printf("Finished writing traindata\n");
-
 	fclose(file);
 	return 0;
 }
@@ -514,12 +399,6 @@ struct testdata *test(struct testing_params test_params, bool relaxation) {
 	gsl_vector *cost_vec = gsl_vector_calloc(_net.params.ntargets);
 	
 	for (int target_i = 0; target_i < _net.params.ntargets; target_i++) {
-		// size_t num_samples_per_target;
-		// if (test_params.num_samples == 0)
-		// 	num_samples_per_target = data[target_i].count;
-		// else
-		// 	num_samples_per_target = test_params.num_samples;
-
 		if (test_params.logging)
 			ret->costs[target_i] = gsl_vector_calloc(max_count);
 
@@ -616,29 +495,6 @@ int save_testdata(struct testdata *data, char *filename) {
 	save_data(SAVE_ENERGIES, SAVE_DOUBLET, data->energies, 1, 1, PS(data->num_samples), file);
 	save_data(SAVE_LENERGIES, SAVE_DOUBLET, data->lenergies, 1, 2, (size_t[]){data->num_samples, _net.params.nlayers-1}, file);
 	save_data(SAVE_ITER_COUNTS, SAVE_DOUBLET, data->iter_counts, 1, 1, PS(1), file);
-
-// 	size_t filetype = SAVE_TEST;
-
-// 	fwrite(&filetype, sizeof(size_t), 1, file);
-// 	fwrite(&data->num_samples, sizeof(size_t), 1, file);
-// 	fwrite(&_net.params.ntargets, sizeof(size_t), 1, file);
-// 	fwrite(_net.params.targets, sizeof(size_t), _net.params.ntargets, file);
-// 	fwrite(&data->num_correct, sizeof(size_t), 1, file);
-
-// 	vecs2file(&data->labels, SAVE_TEST_LABELS, 1, &(size_t){1}, file);
-// 	vecs2file(&data->predictions, SAVE_TEST_PREDICTIONS, 1, &(size_t){1}, file);
-// 	vecs2file(data->costs, SAVE_TEST_COSTS, 1, &_net.params.ntargets, file);
-// 	vecs2file(data->outputs, SAVE_TEST_OUTPUTS, 1, &data->num_samples, file);
-
-// 	if (data->energies)
-// 		vecs2file(data->energies, SAVE_TRAIN_ENERGIES, 1, &data->num_samples, file);
-	
-// 	if (data->lenergies) {
-// 		size_t dims[2] = {data->num_samples, _net.params.nlayers-1};
-// 		vecs2file(data->lenergies, SAVE_TRAIN_LENERGIES, 2, dims, file);
-// 	}
-// 	if (data->iter_counts)
-// 		vecs2file(&data->iter_counts, SAVE_TRAIN_ITER_COUNTS, 1, &(size_t){1}, file);
 	
 	fclose(file);
 	return 0;
@@ -705,13 +561,10 @@ void _calc_lenergy(gsl_vector **layers, gsl_vector **lenergies, size_t iter) {
 }
 
 struct relaxation _relaxation(gsl_vector **layers, gsl_vector **epsilons, bool prediction, struct relaxation_params relax_params, bool logging) {
-	// gsl_vector *epsilons[_net.params.nlayers];
 	gsl_vector *deltax[_net.params.nlayers];
 
-	for (int i = 0; i < _net.params.nlayers; i++) {
-		// epsilons[i] = gsl_vector_calloc(layers[i]->size);
+	for (int i = 0; i < _net.params.nlayers; i++)
 		deltax[i] = gsl_vector_calloc(layers[i]->size);
-	}
 	
 	gsl_vector *energies = gsl_vector_calloc(_net.params.tau);
 	gsl_vector **lenergies = malloc(sizeof(gsl_vector *) * (_net.params.nlayers-1));
@@ -726,10 +579,7 @@ struct relaxation _relaxation(gsl_vector **layers, gsl_vector **epsilons, bool p
 		// calculate epsilons (l = 1:n)
 		for (int l = 0; l < _net.params.nlayers-1; l++) {
 			gsl_vector *act = activation(layers[l], _net.params.act);
-			// printf("1 %d\n", l);
-			// printf("%ld %ld\n", epsilons[l+1]->size, layers[l+1]->size);
 			gsl_vector_memcpy(epsilons[l+1], layers[l+1]);
-			// printf("2\n");
 			gsl_blas_dgemv(CblasNoTrans, -1.0, _net.weights[l], act, 1.0, epsilons[l+1]);
 
 			gsl_vector_free(act);
@@ -750,10 +600,8 @@ struct relaxation _relaxation(gsl_vector **layers, gsl_vector **epsilons, bool p
 			gsl_vector_free(act_deriv);
 		}
 
-		if (prediction) {
-			// gsl_vector_memcpy(deltax[_net.params.nlayers-1], layers[_net.params.nlayers-1]);
+		if (prediction)
 			gsl_blas_daxpy(-gamma, epsilons[_net.params.nlayers-1], layers[_net.params.nlayers-1]);
-		}
 		
 		gsl_vector_set(energies, t, _calc_energy(layers));
 		if (logging)
@@ -769,7 +617,6 @@ struct relaxation _relaxation(gsl_vector **layers, gsl_vector **epsilons, bool p
 			// printf("Energy below threshold, assuming converged\n");
 			gamma = relax_params.gamma;
 			iters = t;
-			// gsl_vector_set(ret->iter_counts, i, t);
 			break;
 		}
 
@@ -782,19 +629,16 @@ struct relaxation _relaxation(gsl_vector **layers, gsl_vector **epsilons, bool p
 				gamma = relax_params.gamma;
 				printf("Stopping early\n");
 				iters = t;
-				// gsl_vector_set(ret->iter_counts, i, t);
 				break;
 			}
 		}
 	}
 
-	for (int i = 0; i < _net.params.nlayers; i++) {
-		// gsl_vector_free(epsilons[i]);
+	for (int i = 0; i < _net.params.nlayers; i++)
 		gsl_vector_free(deltax[i]);
-	}
 
 	if (iters == 0)
-		iters = 127;
+		iters = _net.params.tau-1;
 
 	return (struct relaxation){energies, lenergies, iters};
 }
