@@ -27,6 +27,17 @@ static gsl_vector *_get_vec(struct _mnist_set set, int index, mnist_processing p
 
 static struct _mnist _mnist;
 
+void load_db(enum db db) {
+	switch (db) {
+		case MNIST:			load_mnist(mnist_numbers);	break;
+		case FashionMNIST:	load_mnist(mnist_fashion);	break;
+	}
+}
+
+void free_db() {
+	free_mnist();
+}
+
 void load_mnist(mnist_db type) {
 	switch (type) {
 		case mnist_numbers:

@@ -2,6 +2,9 @@
 #define __UTILS_H__
 
 #define PS(x) &(size_t){x}
+#define PB(x) &(bool){x}
+#define PI(x) &(int){x}
+#define PD(x) &(double){x}
 
 void print_vec(gsl_vector *vec, char *title, bool print_index);
 void print_img(gsl_vector *vec, char *title);

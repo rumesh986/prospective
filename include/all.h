@@ -2,6 +2,7 @@
 #define __INCLUDEALL_H__
 
 #define LOGGING
+#define ERR_INVALID_CONFIG	1
 
 #include <stdbool.h>
 #include <gsl/gsl_matrix.h>

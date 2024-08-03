@@ -1,11 +1,20 @@
 #ifndef __MNIST_H__
 #define __MNIST_H__
 
-// #define MNIST_STANDARD	0x01
-// #define MNIST_FASHION	0x02
+// temporary definition (will move to other file when new db added)
+enum db {
+	MNIST,
+	FashionMNIST
+};
 
-// #define MNIST_TRAIN		0x11
-// #define MNIST_TEST		0x12
+enum db_proc {
+	proc_original,
+	proc_normalize,
+	proc_binarize
+};
+
+void load_db(enum db db);
+void free_db();
 
 typedef enum {
 	mnist_numbers,

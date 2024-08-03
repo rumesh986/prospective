@@ -89,11 +89,10 @@ int save_network(char *filename) {
 		return 1;
 	}
 
-	size_t data[6][3] = {
+	size_t data[8][3] = {
 		{SAVE_TYPE, SAVE_SIZET, SAVE_NETWORK},
 		{SAVE_MNIST_TYPE, SAVE_SIZET, _net.params.mnist},
 		{SAVE_MNIST_PROC, SAVE_SIZET, _net.params.mnist_proc},
-		// {SAVE_ALPHA, SAVE_DOUBLET, _net.params.alpha},
 		{SAVE_TAU, SAVE_SIZET, _net.params.tau},
 		{SAVE_ACT, SAVE_SIZET, _net.params.act},
 		{SAVE_WEIGHTS_INIT, SAVE_SIZET, _net.params.weights},
@@ -102,7 +101,7 @@ int save_network(char *filename) {
 	};
 
 	// printf("DOUBLECHECK: alpha = %f %p\n", data[3][2], &data[3][2]);
-	save_data(SAVE_ARRAY, 0, &data, 0, 6, NULL, file);
+	save_data(SAVE_ARRAY, 0, &data, 0, 8, NULL, file);
 	save_data(SAVE_ALPHA, SAVE_DOUBLET, &_net.params.alpha, 0, 1, NULL, file);
 	gsl_vector_ulong_view lengths = gsl_vector_ulong_view_array(_net.params.lengths, _net.params.nlayers);
 	save_data(SAVE_LAYERS, SAVE_SIZET, &lengths.vector, 1, 1, PS(1), file);

@@ -3,20 +3,35 @@
 
 // extern struct net_params params;
 
-struct config {
-	struct net_params net_params;
-	struct training_params train_params;
-	struct testing_params test_params;
-	struct relaxation_params relax_params;
+enum op_type {
+	op_training,
+	op_testing
+};
 
-	char *net_name;
-	bool should_train;
-	bool should_test;
+struct operation {
+	enum op_type type;
+
+	// maybe put this in a union?
+	struct training training;
+	struct testing testing;
+};
+
+struct config {
+	enum db db;
+
+	size_t num_networks;
+	struct network **networks;
+
+	size_t num_operations;
+	struct operation *operations;
+
+	bool logging;
+	char *label;
 };
 
 struct config parse_config(char *filename);
 void save_config(struct config config, char *filename);
-void free_config();
+void free_config(struct config config);
 void print_config(struct config config);
 
 #endif

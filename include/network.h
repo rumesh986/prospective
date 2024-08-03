@@ -7,6 +7,7 @@ struct relaxation_params {
 
 	size_t gamma_count;
 	double energy_res;
+	size_t max_iters;
 };
 
 struct net_params {
@@ -47,6 +48,65 @@ struct testing_params {
 	bool logging;
 };
 
+// new stuff
+
+// type of block
+enum block_t {
+	block_dense
+};
+
+// abstract block contains pointer to a specific block and its type
+struct block {
+	enum block_t type;
+	void *block;
+};
+
+// collection of blocks
+struct network {
+	size_t nblocks;
+	struct block **blocks;
+
+	struct training *training;
+
+	bool save;
+};
+
+// standard densely connected network
+struct dense_block {
+	double alpha;
+	enum activation act;
+	enum weights_init weight_init;
+
+	size_t nlayers;
+	size_t *layers;
+};
+
+struct training {
+	int id;
+
+	struct network *net;
+
+	size_t ntargets;
+	size_t *targets;
+
+	struct {
+		enum db_proc proc;
+		size_t num_samples;
+		size_t seed;
+		size_t test_samples_per_iters;
+
+		struct relaxation_params *relax;
+	} params;
+};
+
+struct testing {
+	struct network *net;
+
+	size_t num_samples;
+	struct relaxation_params *relax;
+};
+
+// back to old stuff
 struct traindata {
 	gsl_vector **delta_w_mags;
 	gsl_vector *iter_counts;
