@@ -5,7 +5,7 @@ DCFLAGS = -ggdb
 
 FILE_BASE_NAME = main
 
-FILES = $(FILE_BASE_NAME) utils mnist network network_utils config 
+FILES = $(FILE_BASE_NAME) utils mnist network network_utils config database
 C_FILE = $(FILE_BASE_NAME).c
 O_FILE = $(FILE_BASE_NAME).o
 

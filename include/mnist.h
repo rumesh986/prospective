@@ -1,21 +1,6 @@
 #ifndef __MNIST_H__
 #define __MNIST_H__
 
-// temporary definition (will move to other file when new db added)
-enum db {
-	MNIST,
-	FashionMNIST
-};
-
-enum db_proc {
-	proc_original,
-	proc_normalize,
-	proc_binarize
-};
-
-void load_db(enum db db);
-void free_db();
-
 typedef enum {
 	mnist_numbers,
 	mnist_fashion
