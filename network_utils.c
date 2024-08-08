@@ -18,14 +18,14 @@ static inline double _relu_deriv(double x);
 
 // main code
 
-void weight_init(struct net_params params, gsl_matrix *mat) {
-	switch (params.weights) {
+void weight_init(enum weights_init init, gsl_matrix *mat) {
+	switch (init) {
 		case weights_zero:				gsl_matrix_set_all(mat, 0);	break;
 		case weights_one:				gsl_matrix_set_all(mat, 1);	break;
 		// case weights_xavier_normal:		_xavier_normal(mat);		break;
 		case weights_xavier_uniform:	_xavier_uniform(mat);		break;
 		default:
-			printf("Invalid weight initializer provided (%d), setting to -1.0\n", params.weights);
+			printf("Invalid weight initializer provided (%d), setting to -1.0\n", init);
 			gsl_matrix_set_all(mat, -1.0);
 	}
 }

@@ -68,6 +68,9 @@ struct config parse_config(char *filename) {
 	cJSON *relaxations = cJSON_GetObjectItem(_config, "relaxations");
 	cJSON *operations = cJSON_GetObjectItem(_config, "operations");
 
+	// To do: support for loading networks
+	// cJSON *networks = cJSON_GetObjectItem(_config, "networks");
+
 	if (!general || !blocks || !relaxations || !operations) {
 		printf("[Config][Error] Invalid configuration file\n");
 		exit(ERR_INVALID_CONFIG);
@@ -147,6 +150,9 @@ struct config parse_config(char *filename) {
 			set_enum(db, "weights", (int *)&block->weight_init, 4, weights_options, weights_xavier_uniform);
 			set_val(db, "alpha", &block->alpha, PD(0.1), double_tt);
 
+			// initial value for weights, will be changed later if this particular block is used in a network
+			block->weights = NULL;
+
 			struct block *abstract_block = malloc(sizeof(struct block));
 			abstract_block->block = block;
 			abstract_block->type = block_dense;
@@ -204,18 +210,18 @@ struct config parse_config(char *filename) {
 				continue;
 			}
 
-			cJSON *networks = cJSON_GetObjectItem(op, "network");
-			if (!networks || cJSON_GetArraySize(networks) == 0 || !network_label) {
+			cJSON *net_blocks = cJSON_GetObjectItem(op, "network");
+			if (!net_blocks || cJSON_GetArraySize(net_blocks) == 0 || !network_label) {
 				printf("[Config][Error] Invalid training configuration, missing network labels. skipping...\n");
 				continue;
 			}
 
 			int arr_count2 = 0;
 			struct network *net = malloc(sizeof(struct network));
-			net->nblocks = cJSON_GetArraySize(networks);
+			net->nblocks = cJSON_GetArraySize(net_blocks);
 			net->blocks = malloc(sizeof(struct block) * net->nblocks);
 			cJSON *element2;
-			cJSON_ArrayForEach(element2, networks) {
+			cJSON_ArrayForEach(element2, net_blocks) {
 				struct block *block = get_ptr(block_mapping, num_blocks, cJSON_GetStringValue(element2));
 				if (!block) {
 					printf("[Config][Error] Block not found, please check labels. exiting...\n");
@@ -244,7 +250,6 @@ struct config parse_config(char *filename) {
 				train->targets = NULL;
 			} else {
 				train->ntargets = cJSON_GetArraySize(targets);
-				printf("ntargets: %d, in struct: %ld\n", cJSON_GetArraySize(targets), train->ntargets);
 				train->targets = malloc(sizeof(size_t) * train->ntargets);
 				for (int i = 0; i < train->ntargets; i++)
 					train->targets[i] = cJSON_GetArrayItem(targets, i)->valueint;
@@ -297,6 +302,14 @@ void free_config(struct config config) {
 
 		if (ablock->type == block_dense) {
 			struct dense_block *dblock = ablock->block;
+
+			if (dblock->weights) {
+				for (int j = 0; j < dblock->nlayers; j++)
+					gsl_matrix_free(dblock->weights[j]);
+
+				free(dblock->weights);
+			}
+
 			free(dblock->layers);
 			free(dblock);
 		}
@@ -503,7 +516,7 @@ void set_val(cJSON *main_config, char *key, void *setting, void * default_val, e
 }
 
 void *get_ptr(struct mapping *mapping, size_t len, char *label) {
-	printf("Looking for %s among %ld mappings\n", label, len);
+	// printf("Looking for %s among %ld mappings\n", label, len);
 	for (int i = 0; i < len; i++) {
 		if (CMP_STR(mapping[i].label, label))
 			return mapping[i].ptr;
@@ -515,7 +528,7 @@ void _print_network(struct network *net, char *level) {
 	if (net) {
 		printf("%snblocks: %ld\n", level, net->nblocks);
 		for (int j = 0; j < net->nblocks; j++) {
-			printf("%s\tblock %d, type: ", level, j);
+			printf("%sblock %d, type: ", level, j);
 			if (net->blocks[j]->type == block_dense) {
 				printf("Dense\n");
 				struct dense_block *block = net->blocks[j]->block;

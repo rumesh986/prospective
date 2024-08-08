@@ -8,6 +8,16 @@
 		{
 			"type": "dense",
 			"dense": {
+				"label": "mnist_dense2",
+				"alpha": 0.1,
+				"activation": "sigmoid",
+				"weights": "xavier_uniform",
+				"layers": [16, 16]
+			}
+		},
+		{
+			"type": "dense",
+			"dense": {
 				"label": "mnist_dense",
 				"alpha": 0.1,
 				"activation": "sigmoid",
@@ -25,7 +35,7 @@
 
 			"gamma_count": 2,
 			"energy_residual": 1e-9,
-			"max_iteration": 128
+			"max_iterations": 128
 		}
 	],
 	"operations": [
@@ -34,7 +44,9 @@
 			"training": {
 				"label": "default_network",
 				"processing": "normalized",
-				"network": ["mnist_dense"],
+				"network": [
+					"mnist_dense"
+				],
 				"targets": [1,8],
 				"train_samples": 10,
 				"seed": 0,

@@ -16,14 +16,11 @@ struct config config;
 static bool save_net = false;
 
 void trial() {
-	load_mnist(mnist_numbers);
-	free_mnist();
-	exit(0);
 }
 
 int main(int argc, char **argv) {
 	int c;
-	while ((c = getopt(argc, argv, "c:st")) != -1) {
+	while ((c = getopt(argc, argv, "c:t")) != -1) {
 		switch (c) {
 			case 'c':
 				config = parse_config(optarg);
@@ -44,6 +41,8 @@ int main(int argc, char **argv) {
 		exit(0);
 	}
 
+	// print_config(config);
+
 	char results_dir[256];
 	time_t cur_time = time(NULL);
 	struct tm *cur_tm = localtime(&cur_time);
@@ -54,8 +53,6 @@ int main(int argc, char **argv) {
 
 	load_db(config.db);
 
-
-
 	for (int i = 0; i < config.num_operations; i++) {
 		if (config.operations[i].type == op_training) {
 			
@@ -65,6 +62,10 @@ int main(int argc, char **argv) {
 		
 			srand(config.operations[i].training.params.seed);
 
+			init_network(config.networks[i]);
+
+			train(config.networks[i]);
+			
 			// build network
 			// train
 			// save network

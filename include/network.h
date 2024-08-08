@@ -10,47 +10,48 @@ struct relaxation_params {
 	size_t max_iters;
 };
 
-struct net_params {
-	mnist_db mnist;
-	mnist_processing mnist_proc;
+// struct net_params {
+//	mnist_db mnist;
+//	mnist_processing mnist_proc;
 
-	double alpha;
+// 	double alpha;
 	
-	size_t tau;
-	enum activation act;
-	enum weights_init weights;
+// 	size_t tau;
+// 	enum activation act;
+// 	enum weights_init weights;
 	
-	size_t nlayers;
-	size_t *lengths; // must be alloc'd
+// 	size_t nlayers;
+// 	size_t *lengths; // must be alloc'd
 
-	size_t ntargets;
-	size_t *targets; // must be alloc'd
+// 	size_t ntargets;
+// 	size_t *targets; // must be alloc'd
 
-	struct relaxation_params relax_params;
-};
+// 	struct relaxation_params relax_params;
+// };
 
-struct training_params {
-	size_t num_samples;
-	size_t seed;
+// struct training_params {
+// 	size_t num_samples;
+// 	size_t seed;
 
-	size_t test_samples;
+// 	size_t test_samples;
 
-	struct relaxation_params relax_params;
+// 	struct relaxation_params relax_params;
 
-	bool logging;
-};
+// 	bool logging;
+// };
 
-struct testing_params {
-	size_t num_samples;
+// struct testing_params {
+// 	size_t num_samples;
 
-	struct relaxation_params relax_params;
+// 	struct relaxation_params relax_params;
 
-	bool logging;
-};
+// 	bool logging;
+// };
 
 // new stuff
 
 // type of block
+// needed for eventual support of CNNs
 enum block_t {
 	block_dense
 };
@@ -78,7 +79,14 @@ struct dense_block {
 	enum weights_init weight_init;
 
 	size_t nlayers;
-	size_t *layers;
+	size_t *lengths;
+
+	gsl_matrix **weights;
+	gsl_matrix **deltaw;
+
+	gsl_vector **layers;
+	gsl_vector **epsilons;
+	gsl_vector **deltax;
 };
 
 struct training {
@@ -134,18 +142,22 @@ struct testdata {
 	size_t num_samples;
 };
 
-void build_network(size_t inp_len, size_t out_len, struct net_params *params);
-struct net_params *load_network(char *filename);
-int save_network(char *filename);
-void free_network();
+void init_network(struct network *networks);
+struct traindata *train(struct network *net, bool logging);
 
-struct traindata *train(struct training_params train_params);
-int save_traindata(struct traindata *data, char *filename);
-void free_traindata(struct traindata *data);
 
-struct testdata *test(struct testing_params test_params, bool relaxation);
-int save_testdata(struct testdata *data, char *filename);
-void free_testdata(struct testdata *data);
+// void build_network(size_t inp_len, size_t out_len, struct net_params *params);
+// struct net_params *load_network(char *filename);
+// int save_network(char *filename);
+// void free_network();
+
+// struct traindata *train(struct training_params train_params);
+// int save_traindata(struct traindata *data, char *filename);
+// void free_traindata(struct traindata *data);
+
+// struct testdata *test(struct testing_params test_params, bool relaxation);
+// int save_testdata(struct testdata *data, char *filename);
+// void free_testdata(struct testdata *data);
 
 void trial_network();
 

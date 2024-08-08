@@ -14,9 +14,9 @@ enum activation {
 	act_relu
 };
 
-extern struct net_params params;
+// extern struct net_params params;
 
-void weight_init(struct net_params params, gsl_matrix *mat);
+void weight_init(enum weights_init init, gsl_matrix *mat);
 
 gsl_vector *activation(gsl_vector *inp, enum activation act);
 gsl_vector *activation_deriv(gsl_vector *inp, enum activation act);

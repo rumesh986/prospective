@@ -30,5 +30,6 @@ db_dataset db_get_dataset(enum db_set set, int label, enum db_proc processing);
 size_t db_get_count(enum db_set set);
 size_t db_get_input_length();
 void free_db();
+void db_free_dataset(db_dataset data);
 
 #endif
