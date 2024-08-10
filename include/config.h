@@ -12,8 +12,10 @@ struct operation {
 	enum op_type type;
 
 	// maybe put this in a union?
-	struct training training;
-	struct testing testing;
+	union {
+		struct training training;
+		struct testing testing;
+	};
 };
 
 struct config {
@@ -33,5 +35,7 @@ struct config parse_config(char *filename);
 void save_config(struct config config, char *filename);
 void free_config(struct config config);
 void print_config(struct config config);
+
+struct block *new_dense_block(size_t nlayers, size_t *lengths);
 
 #endif

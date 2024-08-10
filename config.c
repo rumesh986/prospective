@@ -118,6 +118,7 @@ struct config parse_config(char *filename) {
 	cJSON *element;
 	int arr_count = 0;
 
+	// handle blocks
 	num_blocks = cJSON_GetArraySize(blocks);
 	block_mapping = malloc(sizeof(struct mapping) * num_blocks);
 	cJSON_ArrayForEach(element, blocks) {
@@ -142,9 +143,9 @@ struct config parse_config(char *filename) {
 			}
 
 			block->nlayers = cJSON_GetArraySize(layers);
-			block->layers = malloc(sizeof(size_t) * block->nlayers);
+			block->lengths = malloc(sizeof(size_t) * block->nlayers);
 			for (int i = 0; i < block->nlayers; i++)
-				block->layers[i] = cJSON_GetArrayItem(layers, i)->valueint;
+				block->lengths[i] = cJSON_GetArrayItem(layers, i)->valueint;
 			
 			set_enum(db, "activation", (int *)&block->act, 3, act_options, act_sigmoid);
 			set_enum(db, "weights", (int *)&block->weight_init, 4, weights_options, weights_xavier_uniform);
@@ -152,10 +153,16 @@ struct config parse_config(char *filename) {
 
 			// initial value for weights, will be changed later if this particular block is used in a network
 			block->weights = NULL;
+			block->deltaw = NULL;
+			block->layers = NULL;
+			block->epsilons = NULL;
+			block->deltax = NULL;
 
 			struct block *abstract_block = malloc(sizeof(struct block));
-			abstract_block->block = block;
 			abstract_block->type = block_dense;
+			abstract_block->dense = block;
+			abstract_block->next = NULL;
+			abstract_block->prev = NULL;
 
 			block_mapping[arr_count] = (struct mapping){cJSON_GetStringValue(label), abstract_block};
 			// all_structures[arr_count] = structure;
@@ -166,6 +173,7 @@ struct config parse_config(char *filename) {
 		arr_count++;
 	}
 
+	// handle relaxations
 	arr_count = 0;
 	num_relaxations = cJSON_GetArraySize(relaxations);
 	relaxation_mapping = malloc(sizeof(struct mapping) * num_relaxations);
@@ -189,6 +197,7 @@ struct config parse_config(char *filename) {
 		arr_count++;
 	}
 
+	// handle operations
 	arr_count = 0;
 	ret.num_operations = cJSON_GetArraySize(operations);
 	ret.operations = malloc(sizeof(struct operation) * ret.num_operations);
@@ -210,6 +219,7 @@ struct config parse_config(char *filename) {
 				continue;
 			}
 
+			// handle networks
 			cJSON *net_blocks = cJSON_GetObjectItem(op, "network");
 			if (!net_blocks || cJSON_GetArraySize(net_blocks) == 0 || !network_label) {
 				printf("[Config][Error] Invalid training configuration, missing network labels. skipping...\n");
@@ -235,6 +245,15 @@ struct config parse_config(char *filename) {
 			num_networks++;
 			network_mapping = realloc(network_mapping, sizeof(struct mapping) * num_networks);
 			network_mapping[num_networks-1] = (struct mapping){cJSON_GetStringValue(network_label), net};
+
+			// struct network *net = malloc(sizeof(struct network));
+			net->head = get_ptr(block_mapping, num_blocks, cJSON_GetStringValue(cJSON_GetArrayItem(net_blocks, 0)));
+			struct block *block = net->head;
+			for (int i = 1; i < net->nblocks; i++) {
+				block->next = get_ptr(block_mapping, num_blocks, cJSON_GetStringValue(cJSON_GetArrayItem(net_blocks, i)));
+				block->next->prev = block;
+				block = block->next;
+			}
 			
 			net->training = train;
 			train->net = net;
@@ -301,16 +320,49 @@ void free_config(struct config config) {
 		struct block *ablock = block_mapping[i].ptr;
 
 		if (ablock->type == block_dense) {
-			struct dense_block *dblock = ablock->block;
+			struct dense_block *dblock = ablock->dense;
 
 			if (dblock->weights) {
-				for (int j = 0; j < dblock->nlayers; j++)
-					gsl_matrix_free(dblock->weights[j]);
-
+				for (int j = 1; j < dblock->nlayers+1; j++) {
+					if (dblock->weights[j])
+						gsl_matrix_free(dblock->weights[j]);
+				}
 				free(dblock->weights);
 			}
 
-			free(dblock->layers);
+			if (dblock->deltaw) {
+				for (int j = 0; j < dblock->nlayers; j++) {
+					if (dblock->deltaw[j])
+						gsl_matrix_free(dblock->deltaw[j]);
+				}
+				free(dblock->deltaw);
+			}
+
+			if (dblock->layers) {
+				for (int j = 1; j < dblock->nlayers+1; j++) {
+					if (dblock->layers[j])
+						gsl_vector_free(dblock->layers[j]);
+				}
+				free(dblock->layers);
+			}
+
+			if (dblock->epsilons) {
+				for (int j = 1; j < dblock->nlayers+1; j++) {
+					if (dblock->epsilons[j])
+						gsl_vector_free(dblock->epsilons[j]);
+				}
+				free(dblock->epsilons);
+			}
+
+			if (dblock->deltax) {
+				for (int j = 0; j < dblock->nlayers; j++) {
+					if (dblock->deltax[j])
+						gsl_vector_free(dblock->deltax[j]);
+				}
+				free(dblock->deltax);
+			}
+
+			free(dblock->lengths);
 			free(dblock);
 		}
 		free(ablock);
@@ -436,6 +488,27 @@ void print_config(struct config config) {
 
 }
 
+struct block *new_dense_block(size_t nlayers, size_t *lengths) {
+	struct block *ret = malloc(sizeof(struct block));
+	ret->type = block_dense;
+	ret->dense = malloc(sizeof(struct dense_block));
+	ret->dense->nlayers = nlayers;
+	ret->dense->lengths = lengths;
+	ret->prev = NULL;
+	ret->next = NULL;
+
+	num_blocks++;
+	struct mapping *new_block_map_ptr = realloc(block_mapping, sizeof(struct mapping) * num_blocks);
+	if (new_block_map_ptr)
+		block_mapping = new_block_map_ptr;
+	else {
+		printf("Failed to change block mapping size\n");
+		exit(4);
+	}
+	block_mapping[num_blocks-1] = (struct mapping){"", ret};
+	return ret;
+}
+
 // private functions
 
 cJSON *_parse_file(char *filename) {
@@ -527,15 +600,18 @@ void *get_ptr(struct mapping *mapping, size_t len, char *label) {
 void _print_network(struct network *net, char *level) {
 	if (net) {
 		printf("%snblocks: %ld\n", level, net->nblocks);
-		for (int j = 0; j < net->nblocks; j++) {
-			printf("%sblock %d, type: ", level, j);
-			if (net->blocks[j]->type == block_dense) {
+		int index = 0;
+		printf("Linked list form:\n");
+		struct block *block = net->head;
+		while(block) {
+			printf("%sblock %d, type: ", level, index);
+			if (block->type == block_dense) {
 				printf("Dense\n");
-				struct dense_block *block = net->blocks[j]->block;
-				printf("%s\talpha: %.4f\n", level, block->alpha);
+				struct dense_block *dblock = block->dense;
+				printf("%s\talpha: %.4f\n", level, dblock->alpha);
 
 				printf("%s\tactivation: ", level);
-				switch (block->act) {
+				switch (dblock->act) {
 					case act_linear:	printf("Linear");	break;
 					case act_sigmoid:	printf("Sigmoid");	break;
 					case act_relu:		printf("ReLU");		break;
@@ -544,7 +620,7 @@ void _print_network(struct network *net, char *level) {
 				printf("\n");
 
 				printf("%s\tWeight init: ", level);
-				switch (block->weight_init) {
+				switch (dblock->weight_init) {
 					case weights_zero:				printf("Zeros");			break;
 					case weights_one:				printf("Ones");				break;
 					case weights_xavier_normal:		printf("Xavier normal");	break;
@@ -553,14 +629,14 @@ void _print_network(struct network *net, char *level) {
 				}
 				printf("\n");
 
-				printf("%s\tnlayers: %ld\n", level, block->nlayers);
+				printf("%s\tnlayers: %ld\n", level, dblock->nlayers);
 				printf("%s\tlayers: [", level);
-				for (int k = 0; k < block->nlayers; k++)
-					printf("%ld ", block->layers[k]);
+				for (int k = 0; k < dblock->nlayers; k++)
+					printf("%ld ", dblock->lengths[k]);
 				printf("]\n");
-			} else {
-				printf("Unknown\n");
 			}
+			block = block->next;
+			index++;
 		}
 	}
 }

@@ -53,14 +53,9 @@ void free_db() {
 }
 
 void db_free_dataset(db_dataset data) {
-	for (int i = 0; i < data.count; i++) {
+	for (int i = 0; i < data.count; i++)
 		gsl_vector_free(data.images[i]);
-	}
 	
 	free(data.images);
 	gsl_vector_free(data.label_vec);
-	// switch (_db) {
-	// 	case MNIST:
-	// 	case FashionMNIST:	free_mnist_dataset(data);
-	// }
 }

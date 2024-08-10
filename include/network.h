@@ -59,7 +59,14 @@ enum block_t {
 // abstract block contains pointer to a specific block and its type
 struct block {
 	enum block_t type;
-	void *block;
+	// void *block;
+
+	union {
+		struct dense_block *dense;
+	};
+
+	struct block *prev;
+	struct block *next;
 };
 
 // collection of blocks
@@ -68,6 +75,11 @@ struct network {
 	struct block **blocks;
 
 	struct training *training;
+
+	// after init_network is called, head will point to 
+	// single layer dense_block as input layer
+	struct block *head;
+	size_t nlayers;
 
 	bool save;
 };
@@ -81,12 +93,28 @@ struct dense_block {
 	size_t nlayers;
 	size_t *lengths;
 
-	gsl_matrix **weights;
-	gsl_matrix **deltaw;
+	size_t global_pos;
 
+	// each of these will be of size nlayers+2
+	// arr[0] will point to final layer of previous block
+	// arr[nlayers+1] will point to first layer of next block
+	// arrs are then one-indexed
+	gsl_matrix **weights;
 	gsl_vector **layers;
 	gsl_vector **epsilons;
+
+	// these will be of size nlayers
+	// zero-indexed
+	// for example, layers[i] will be associated with deltax[i-1]
+	gsl_matrix **deltaw;
 	gsl_vector **deltax;
+
+	// one contiguous block holding all lenergies
+	// individual layer can be obtained by reading with a stride of nlayers(ish)
+	// so nth layer can be found by taking every (n-1)th value in list
+	// can be converted to matrix view with stride
+	double *lenergies;
+	size_t lenergy_nchunks; // to keep track of size and hopefully reduce number of time wasting realloc's
 };
 
 struct training {
@@ -123,6 +151,9 @@ struct traindata {
 	gsl_vector ***lenergies;
 	gsl_vector *train_costs;
 
+	double ***lenergiesd;
+
+
 	size_t num_samples;
 };
 
@@ -144,6 +175,7 @@ struct testdata {
 
 void init_network(struct network *networks);
 struct traindata *train(struct network *net, bool logging);
+void save_traindata(struct network *net, struct traindata *data, char *filename);
 
 
 // void build_network(size_t inp_len, size_t out_len, struct net_params *params);

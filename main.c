@@ -16,6 +16,9 @@ struct config config;
 static bool save_net = false;
 
 void trial() {
+	config = parse_config("config.json");
+	print_config(config);
+	exit(0);
 }
 
 int main(int argc, char **argv) {
@@ -55,7 +58,7 @@ int main(int argc, char **argv) {
 
 	for (int i = 0; i < config.num_operations; i++) {
 		if (config.operations[i].type == op_training) {
-			
+			printf("Starting train operation\n");
 			// if seed not provided or equal to zero, seed with current time
 			if (config.operations[i].training.params.seed == 0)
 				config.operations[i].training.params.seed = cur_time;
@@ -64,8 +67,8 @@ int main(int argc, char **argv) {
 
 			init_network(config.networks[i]);
 
-			train(config.networks[i]);
-			
+			struct traindata *traindata = train(config.networks[i], true);
+			save_traindata(config.networks[i]);
 			// build network
 			// train
 			// save network
@@ -78,7 +81,9 @@ int main(int argc, char **argv) {
 
 	}
 
+	printf("Freeing DB\n");
 	free_db();
 	// free_network();
+	printf("Freeing config\n");
 	free_config(config);
 }

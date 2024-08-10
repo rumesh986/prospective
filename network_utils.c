@@ -18,7 +18,7 @@ static inline double _relu_deriv(double x);
 
 // main code
 
-void weight_init(enum weights_init init, gsl_matrix *mat) {
+void weight_init(gsl_matrix *mat, enum weights_init init) {
 	switch (init) {
 		case weights_zero:				gsl_matrix_set_all(mat, 0);	break;
 		case weights_one:				gsl_matrix_set_all(mat, 1);	break;

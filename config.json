@@ -29,13 +29,20 @@
 	"networks": [],
 	"relaxations": [
 		{
-			"label": "default_relaxation",
+			"label": "working_relaxation",
 			"gamma": 0.1,
 			"gamma_rate": 0.5,
-
 			"gamma_count": 2,
-			"energy_residual": 1e-9,
-			"max_iterations": 128
+			"energy_residual": 1e-18,
+			"max_iterations": 2000
+		},
+		{
+			"label": "trial_relax",
+			"gamma": 0.1,
+			"gamma_rate": 0.5,
+			"gamma_count": 2,
+			"energy_residual": 1e-40,
+			"max_iterations": 2000
 		}
 	],
 	"operations": [
@@ -48,10 +55,10 @@
 					"mnist_dense"
 				],
 				"targets": [1,8],
-				"train_samples": 10,
+				"train_samples": 1,
 				"seed": 0,
-				"test_samples_per_iter": 10,
-				"relaxation": "default_relaxation",
+				"test_samples_per_iter": 1,
+				"relaxation": "trial_relax",
 				"save": true
 			}
 		},

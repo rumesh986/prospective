@@ -4,6 +4,8 @@
 #define LOGGING
 #define ERR_INVALID_CONFIG	1
 
+#define CHUNK_SIZE	100
+
 #include <stdbool.h>
 #include <gsl/gsl_matrix.h>
 
@@ -11,5 +13,6 @@
 #include "network_utils.h"
 #include "network.h"
 #include "utils.h"
+#include "config.h"
 
 #endif
