@@ -40,6 +40,15 @@ gsl_vector *activation(gsl_vector *inp, enum activation act) {
 			return NULL;
 	}
 }
+void activation_inplace(gsl_vector *inp, gsl_vector *out, enum activation act) {
+	switch (act) {
+		case act_linear:	return vec_ops_inplace(inp, out, _linear);
+		case act_sigmoid:	return vec_ops_inplace(inp, out, _sigmoid);
+		case act_relu:		return vec_ops_inplace(inp, out, _relu);
+		default:
+			printf("ERROR: Invalid activation function specified\n");
+	}
+}
 
 gsl_vector *activation_deriv(gsl_vector *inp, enum activation act) {
 	switch (act) {
@@ -49,6 +58,16 @@ gsl_vector *activation_deriv(gsl_vector *inp, enum activation act) {
 		default:
 			printf("ERROR: Invalid activation function specified\n");
 			return NULL;
+	}
+}
+
+void activation_deriv_inplace(gsl_vector *inp, gsl_vector *out, enum activation act) {
+	switch (act) {
+		case act_linear:	return vec_ops_inplace(inp, out, _linear_deriv);
+		case act_sigmoid:	return vec_ops_inplace(inp, out, _sigmoid_deriv);
+		case act_relu:		return vec_ops_inplace(inp, out, _relu_deriv);
+		default:
+			printf("ERROR: Invalid activation function specified\n");
 	}
 }
 

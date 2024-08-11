@@ -17,7 +17,7 @@ static bool save_net = false;
 
 void trial() {
 	config = parse_config("config.json");
-	print_config(config);
+	print_config();
 	exit(0);
 }
 
@@ -58,17 +58,20 @@ int main(int argc, char **argv) {
 
 	for (int i = 0; i < config.num_operations; i++) {
 		if (config.operations[i].type == op_training) {
+			struct training train_params = config.operations[i].training;
 			printf("Starting train operation\n");
 			// if seed not provided or equal to zero, seed with current time
-			if (config.operations[i].training.params.seed == 0)
-				config.operations[i].training.params.seed = cur_time;
+			if (train_params.seed == 0)
+				train_params.seed = cur_time;
 		
-			srand(config.operations[i].training.params.seed);
+			srand(train_params.seed);
 
-			init_network(config.networks[i]);
+			init_network(&train_params.net, train_params.ntargets);
+			set_network(train_params.net);
+			struct traindata * train_data = train(train_params, true);
 
-			struct traindata *traindata = train(config.networks[i], true);
-			save_traindata(config.networks[i]);
+			// struct traindata *traindata = train(config.networks[i], true);
+			// save_traindata(config.networks[i]);
 			// build network
 			// train
 			// save network

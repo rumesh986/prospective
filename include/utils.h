@@ -10,6 +10,7 @@ void print_vec(gsl_vector *vec, char *title, bool print_index);
 void print_img(gsl_vector *vec, char *title);
 
 gsl_vector *vec_ops(gsl_vector *inp, double(*op)(double));
+void vec_ops_inplace(gsl_vector *inp, gsl_vector *out, double(*op)(double));
 
 double frobenius_norm(gsl_matrix *mat);
 

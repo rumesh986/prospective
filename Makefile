@@ -26,7 +26,7 @@ H_FILES = $(addprefix ./include/, $(addsuffix .h, $(FILES))))
 $(FILE_BASE_NAME): $(O_FILES)
 	$(CC) -o $(FILE_BASE_NAME) $(O_FILES) $(LDLIBS)
 
-.PHONY: build run default gdb valgrind clean rebuild
+.PHONY: build run default trial gdb valgrind clean rebuild
 build: $(FILE_BASE_NAME)
 
 run: build
@@ -35,6 +35,9 @@ run: build
 default: build
 	./$(FILE_BASE_NAME) -c config.json -s
 	./processing
+
+trial: build
+	./$(FILE_BASE_NAME) -t
 
 gdb: build
 	gdb ./$(FILE_BASE_NAME)

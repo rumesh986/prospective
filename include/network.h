@@ -10,59 +10,19 @@ struct relaxation_params {
 	size_t max_iters;
 };
 
-// struct net_params {
-//	mnist_db mnist;
-//	mnist_processing mnist_proc;
-
-// 	double alpha;
-	
-// 	size_t tau;
-// 	enum activation act;
-// 	enum weights_init weights;
-	
-// 	size_t nlayers;
-// 	size_t *lengths; // must be alloc'd
-
-// 	size_t ntargets;
-// 	size_t *targets; // must be alloc'd
-
-// 	struct relaxation_params relax_params;
-// };
-
-// struct training_params {
-// 	size_t num_samples;
-// 	size_t seed;
-
-// 	size_t test_samples;
-
-// 	struct relaxation_params relax_params;
-
-// 	bool logging;
-// };
-
-// struct testing_params {
-// 	size_t num_samples;
-
-// 	struct relaxation_params relax_params;
-
-// 	bool logging;
-// };
-
-// new stuff
-
 // type of block
 // needed for eventual support of CNNs
 enum block_t {
-	block_dense
+	block_layer
 };
 
 // abstract block contains pointer to a specific block and its type
 struct block {
 	enum block_t type;
-	// void *block;
 
 	union {
 		struct dense_block *dense;
+		struct block_layer *layer;
 	};
 
 	struct block *prev;
@@ -71,75 +31,54 @@ struct block {
 
 // collection of blocks
 struct network {
-	size_t nblocks;
-	struct block **blocks;
-
-	struct training *training;
-
-	// after init_network is called, head will point to 
-	// single layer dense_block as input layer
-	struct block *head;
-	size_t nlayers;
-
-	bool save;
-};
-
-// standard densely connected network
-struct dense_block {
 	double alpha;
 	enum activation act;
 	enum weights_init weight_init;
 
-	size_t nlayers;
-	size_t *lengths;
+	struct block *head; // points to input layer, initial value is 0, real value set in init_network
+	struct block *tail; // points to output layer, initial value is 0, real value set in init_network
 
-	size_t global_pos;
+	size_t lenergy_chunks;
 
-	// each of these will be of size nlayers+2
-	// arr[0] will point to final layer of previous block
-	// arr[nlayers+1] will point to first layer of next block
-	// arrs are then one-indexed
-	gsl_matrix **weights;
-	gsl_vector **layers;
-	gsl_vector **epsilons;
+	bool save;
+};
 
-	// these will be of size nlayers
-	// zero-indexed
-	// for example, layers[i] will be associated with deltax[i-1]
-	gsl_matrix **deltaw;
-	gsl_vector **deltax;
+struct block_layer {
+	size_t length;
 
-	// one contiguous block holding all lenergies
-	// individual layer can be obtained by reading with a stride of nlayers(ish)
-	// so nth layer can be found by taking every (n-1)th value in list
-	// can be converted to matrix view with stride
-	double *lenergies;
-	size_t lenergy_nchunks; // to keep track of size and hopefully reduce number of time wasting realloc's
+	gsl_vector *layer;
+	gsl_vector *act;	// used to calculate activated versions or derivative of activation versions
+	gsl_vector *epsilon;
+	gsl_vector *out;
+
+	gsl_matrix *weights;
+
+	gsl_vector *deltax;
+	gsl_matrix *deltaw;
+
+	double **energies;
+	gsl_vector *epsilon2;	// used when calculating energies, without disturbing epsilon
 };
 
 struct training {
-	int id;
-
-	struct network *net;
+	struct relaxation_params relax;
+	struct network net;
 
 	size_t ntargets;
 	size_t *targets;
 
-	struct {
-		enum db_proc proc;
-		size_t num_samples;
-		size_t seed;
-		size_t test_samples_per_iters;
-
-		struct relaxation_params *relax;
-	} params;
+	enum db_proc proc;
+	size_t num_samples;
+	size_t seed;
+	size_t test_samples_per_iters;
 };
 
 struct testing {
-	struct network *net;
+	bool relax;
+	struct relaxation_params relax_params;
+	struct network net;
 
 	size_t num_samples;
-	struct relaxation_params *relax;
 };
 
 // back to old stuff
@@ -173,12 +112,12 @@ struct testdata {
 	size_t num_samples;
 };
 
-void init_network(struct network *networks);
-struct traindata *train(struct network *net, bool logging);
+void init_network(struct network *net, size_t ntargets);
+void set_network(struct network net);
+struct traindata *train(struct training train, bool logging);
 void save_traindata(struct network *net, struct traindata *data, char *filename);
 
 
-// void build_network(size_t inp_len, size_t out_len, struct net_params *params);
 // struct net_params *load_network(char *filename);
 // int save_network(char *filename);
 // void free_network();

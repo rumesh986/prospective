@@ -4,6 +4,7 @@
 #include <gsl/gsl_matrix.h>
 #include <gsl/gsl_blas.h>
 
+#include "include/all.h"
 #include "include/utils.h"
 #include "include/savefiles.h"
 
@@ -48,6 +49,16 @@ gsl_vector *vec_ops(gsl_vector *inp, double(*op)(double)) {
 		gsl_vector_set(ret, i, op(gsl_vector_get(inp, i)));
 	return ret;
 }
+void vec_ops_inplace(gsl_vector *inp, gsl_vector *out, double(*op)(double)) {
+	if (inp->size != out->size) {
+		printf("[Error] vector sizes dont match");
+		exit(ERR_VEC_OPS);
+	}
+
+	for (int i = 0; i < inp->size; i++)
+		gsl_vector_set(out, i, op(gsl_vector_get(inp, i)));
+}
+
 
 double frobenius_norm(gsl_matrix *mat) {
 	double ret = 0.0;
@@ -127,25 +138,6 @@ void save_data(size_t label, size_t dtype, void *data, size_t tensor_dim, size_t
 	_recursive_tensor2file(data, tensor_dim, ndims, dims, 0, file);
 }
 
-// void _recursive_vec2file(void *data, size_t ndims, size_t *dims, int depth, FILE *file) {
-// 	for (int i = 0; i < dims[depth]; i++) {
-// 		if (depth == ndims-1) {
-// 			vec2file( ((gsl_vector **)data)[i], file);
-// 		} else {
-// 			_recursive_vec2file(( (void **) data)[i],  ndims, dims, depth+1, file);
-
-// 		}
-// 	}
-// }
-
-// void vecs2file(void *data, size_t type, size_t ndims, size_t *dims, FILE *file) {
-// 	size_t header[2] = {type, ndims};
-
-// 	fwrite(header, sizeof(size_t), 2, file);
-// 	fwrite(dims, sizeof(size_t), ndims, file);
-
-// 	_recursive_vec2file(data, ndims, dims, 0, file);
-// }
 
 gsl_matrix *file2mat(FILE *file) {
 	size_t datainfo[2];
