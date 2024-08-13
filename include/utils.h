@@ -6,6 +6,14 @@
 #define PI(x) &(int){x}
 #define PD(x) &(double){x}
 
+enum dtype {
+	int_dt,
+	size_dt,
+	double_dt,
+	bool_dt,
+	network_dt
+};
+
 void print_vec(gsl_vector *vec, char *title, bool print_index);
 void print_img(gsl_vector *vec, char *title);
 
@@ -17,7 +25,7 @@ double frobenius_norm(gsl_matrix *mat);
 void vec2file(gsl_vector *vec, FILE *file);
 void mat2file(gsl_matrix *mat, FILE *file);
 
-void save_data(size_t label, size_t dtype, void *data, size_t tensor_dim, size_t ndims, size_t *dims, FILE *file);
+void save_data(size_t label, enum dtype dtype, void *data, size_t tensor_dim, size_t ndims, size_t *dims, FILE *file);
 
 gsl_matrix *file2mat(FILE *file);
 

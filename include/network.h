@@ -38,6 +38,7 @@ struct network {
 	struct block *head; // points to input layer, initial value is 0, real value set in init_network
 	struct block *tail; // points to output layer, initial value is 0, real value set in init_network
 
+	size_t nlayers;
 	size_t ntargets;
 	size_t *targets;
 
@@ -59,8 +60,10 @@ struct block_layer {
 	gsl_vector *deltax;
 	gsl_matrix *deltaw;
 
-	double **energies;
 	gsl_vector *epsilon2;	// used when calculating energies, without disturbing epsilon
+
+	double **energies;
+	double *deltaw_mags;
 };
 
 struct training {
@@ -83,15 +86,11 @@ struct testing {
 
 // back to old stuff
 struct traindata {
-	gsl_vector **delta_w_mags;
-	gsl_vector *iter_counts;
-	gsl_vector **energies;
+	// double **delta_w_mags;
+	size_t * iter_counts;
 
-	gsl_vector ***lenergies;
-	gsl_vector *train_costs;
-
-	double ***lenergiesd;
-
+	// double ***lenergies;
+	double *train_costs;
 
 	size_t num_samples;
 };

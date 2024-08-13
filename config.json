@@ -71,7 +71,7 @@
 				"label": "default_train_op",
 				"processing": "normalized",
 				"network": "default_network",
-				"train_samples": 1,
+				"train_samples": 10,
 				"seed": 0,
 				"test_samples_per_iter": 1,
 				"relaxation": "trial_relax",
@@ -83,7 +83,8 @@
 			"testing": {
 				"network": "default_network",
 				"num_samples": 1000,
-				"relaxation": null
+				"relaxation": null,
+				"label": "norelax"
 			}
 		},
 		{
@@ -91,7 +92,8 @@
 			"testing": {
 				"network": "default_network",
 				"num_samples": 1000,
-				"relaxation": "working_relaxation"
+				"relaxation": "working_relaxation",
+				"label": "relax"
 			}
 		}
 	]

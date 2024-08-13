@@ -10,7 +10,7 @@
 
 // local header
 
-void _recursive_tensor2file(void *data, size_t tensor_dim, size_t ndims, size_t *dims, int depth, FILE *file);
+void _recursive_tensor2file(void **data, size_t tensor_dim, size_t ndims, size_t *dims, int depth, FILE *file);
 
 // main code
 
@@ -87,7 +87,7 @@ void mat2file(gsl_matrix *mat, FILE *file) {
 	gsl_matrix_fwrite(file, mat);
 }
 
-void save_data(size_t label, size_t dtype, void *data, size_t tensor_dim, size_t ndims, size_t *dims, FILE *file) {
+void save_data(size_t label, enum dtype dtype, void *data, size_t tensor_dim, size_t ndims, size_t *dims, FILE *file) {
 	// no data to write exit without error
 	if (!data)
 		return;
@@ -104,9 +104,9 @@ void save_data(size_t label, size_t dtype, void *data, size_t tensor_dim, size_t
 			size_t dtype_i = *((size_t *)data + 3*i + 1);
 			void *data_i;
 			switch (dtype_i) {
-				case SAVE_SIZET:	data_i = ((size_t *)data + 3*i + 2);	break;
-				case SAVE_DOUBLET:	printf("yup\n");	data_i = ((double *)data + 3*i + 2);	break;
-				default:			data_i = ((size_t *)data + 3*i + 2);	break;
+				case size_dt:	data_i = ((size_t *)data + 3*i + 2);	break;
+				case double_dt:	data_i = ((double *)data + 3*i + 2);	break;
+				default:		data_i = ((size_t *)data + 3*i + 2);	break;
 			}
 
 			if (label_i == SAVE_ALPHA) {
@@ -135,6 +135,7 @@ void save_data(size_t label, size_t dtype, void *data, size_t tensor_dim, size_t
 	// fwrite(&ndims, sizeof(size_t), 1, file);
 	fwrite(dims, sizeof(size_t), ndims, file);
 
+	printf("Writing %ld\n", label);
 	_recursive_tensor2file(data, tensor_dim, ndims, dims, 0, file);
 }
 
@@ -150,14 +151,18 @@ gsl_matrix *file2mat(FILE *file) {
 }
 
 // private functions
-void _recursive_tensor2file(void *data, size_t tensor_dim, size_t ndims, size_t *dims, int depth, FILE *file) {
+void _recursive_tensor2file(void **data, size_t tensor_dim, size_t ndims, size_t *dims, int depth, FILE *file) {
 	for (int i = 0; i < dims[depth]; i++) {
 		if (depth == ndims-1) {
-			void *data_ptr = dims[depth] > 1 ? ((void **)data)[i] : data;
-			switch (tensor_dim) {
-				case 1:	vec2file((gsl_vector *)data_ptr, file);	break;
-				case 2: mat2file((gsl_matrix *)data_ptr, file);	break;
+			if (tensor_dim == 1) {
+				gsl_vector_view *data_ptr = dims[depth] > 1 ? (data)[0] : (gsl_vector_view *) data;
+				vec2file(&data_ptr->vector, file);
 			}
+			// void *data_ptr = dims[depth] > 1 ? ((void **)data)[i] : data;
+			// switch (tensor_dim) {
+			// 	case 1:	vec2file(&(*(gsl_vector_view *) data_ptr).vector, file);	break;
+			// 	case 2: mat2file(&((gsl_matrix_view *) data_ptr)->matrix, file);	break;
+			// }
 		} else {
 			_recursive_tensor2file(((void **)data)[i], tensor_dim, ndims, dims, depth+1, file);
 		}

@@ -13,17 +13,18 @@
 #define PLOOP(a, b) for (b = a.head->next; b; b=b->next) // partial loop, all layers except input layer
 #define PLOOP2(a, b) for (b = a.head; b->next; b=b->next) // partial loop, all layers except output layer
 
-struct traindata *trainresults = NULL;
+struct traindata *_trainresults = NULL;
 
 static struct network _net;
 static struct relaxation_params _relax;
-static int sample_i;
+static int _train_i;
+static bool _logging = false;
 
-void _relaxation(int index, bool training);
+void _relaxation(bool training);
 void _adjust_eps();
 void _adjust_x(bool training);
 void _adjust_w();
-bool _check_stop(int iter);
+bool _check_stop(int iter, bool reset);
 void _free_block(struct block *ablock);
 
 // main code
@@ -34,7 +35,7 @@ void init_network(struct network *net) {
 	// update input and output lengths
 	net->head->layer->length = db_get_input_length();
 	// net->tail->layer->length = ntargets;
-
+	net->nlayers = 0;
 	// for (struct block *cur_block = net.head; cur_block; cur_block=cur_block->next) {
 	for (struct block *cur_block = net->head; cur_block; cur_block=cur_block->next) {
 		if (cur_block->type == block_layer) {
@@ -54,6 +55,8 @@ void init_network(struct network *net) {
 				weight_init(layer->weights, net->weight_init);
 			}
 		}
+
+		net->nlayers++;
 	}
 	net->lenergy_chunks = 0;
 
@@ -68,6 +71,7 @@ struct traindata *train(struct training train, bool logging) {
 	printf("Preparing to train...\n");
 
 	_relax = train.relax;
+	_logging = logging;
 
 	size_t max_count = db_get_count(db_train);
 	db_dataset data_train[_net.ntargets];
@@ -85,37 +89,31 @@ struct traindata *train(struct training train, bool logging) {
 	if (num_samples == 0)
 		num_samples = max_count * _net.ntargets;
 	
-	// prepare lenergy storage location
-	struct block *cblock;
-	FLOOP(_net, cblock) {
-		if (cblock->type == block_layer) {
-			cblock->layer->energies = malloc(sizeof(double *) * num_samples);
-			for (int i = 0; i < num_samples; i++)
-				cblock->layer->energies[i] = NULL;
-		}
-	}
-	
-	// combine dense layers into contiguous block for easy working?
-	// or propagate per dense block
-	//		this is probably better in future when cnn blocks are added
-	//		add layers, epsilons etc. to reduce number of alloc's
-	// or change network to linked list
-	// start function at start of net, it can propagate itself through the list without a for loop
-
 	struct traindata *ret;
 	int target_counter = -1;
-	if (logging) {
+	if (_logging) {
 		ret = malloc(sizeof(struct traindata));
-		ret->lenergies = malloc(sizeof(gsl_vector **) * num_samples);
-		// ret->lenergiesd = malloc(sizeof (double **) * num_samples);
-		// ret->delta_w_mags = malloc(sizeof(gsl_vector *) * )
+		ret->iter_counts = malloc(sizeof(size_t) * num_samples);
+		ret->train_costs = malloc(sizeof(double) * num_samples);
 		ret->num_samples = num_samples;
-		trainresults = ret;
+		_trainresults = ret;
+
+		// prepare lenergy and deltaw_mags storage location
+		struct block *cblock;
+		FLOOP(_net, cblock) {
+			if (cblock->type == block_layer) {
+				cblock->layer->deltaw_mags = malloc(sizeof(double *) * num_samples);
+				cblock->layer->energies = malloc(sizeof(double *) * num_samples);
+				for (int i = 0; i < num_samples; i++)
+					cblock->layer->energies[i] = NULL;
+				
+			}
+		}
 	}
 
 	printf("Starting to train on %ld images\n", num_samples);
-	for (sample_i = 0; sample_i < num_samples; sample_i++) {
-		int cur_target = sample_i % _net.ntargets;
+	for (_train_i = 0; _train_i < num_samples; _train_i++) {
+		int cur_target = _train_i % _net.ntargets;
 
 		if (cur_target == 0)
 			target_counter++;
@@ -123,8 +121,11 @@ struct traindata *train(struct training train, bool logging) {
 		gsl_vector_memcpy(_net.head->layer->layer, data_train[cur_target].images[target_counter]);
 		gsl_vector_set_basis(_net.tail->layer->layer, cur_target);
 	
-		_relaxation(sample_i, true);
+		_relaxation(true);
 		_adjust_w();
+
+		_net.lenergy_chunks = 0;
+
 	}
 
 	printf("Completed training, freeing datasets\n");
@@ -133,12 +134,49 @@ struct traindata *train(struct training train, bool logging) {
 		db_free_dataset(data_test[i]);
 	}
 
-	trainresults = NULL;
+	_trainresults = NULL;
+	_logging = false;
 	return ret;
 }
 
-void save_traindata(struct network *net, struct traindata *data, char *filename) {
-	gsl_vector ***lenergies = malloc(sizeof(gsl_vector **) * data->num_samples);
+void save_traindata(struct traindata *data, char *filename) {
+	// gsl_vector ***lenergies = malloc(sizeof(gsl_vector **) * data->num_samples);
+	gsl_vector_view *delta_w_mags = malloc(sizeof(gsl_vector_view) * _net.nlayers-1);
+	gsl_vector_view lenergies[data->num_samples][_net.nlayers-1];
+	// gsl_vector_view delta_w_mags[_net.nlayers-1];
+	// gsl_vector *iter_counts = gsl_vector_calloc(data->num_samples);
+	// gsl_vector *train_costs = gsl_vector_calloc(data->num_samples);
+
+	gsl_vector_long_view iter_counts = gsl_vector_long_view_array(data->iter_counts, data->num_samples);
+	gsl_vector_view train_costs = gsl_vector_view_array(data->train_costs, data->num_samples);
+
+	struct block *cblock;
+	int l = 0;
+	PLOOP2(_net, cblock) {
+		delta_w_mags[l] = gsl_vector_view_array(cblock->layer->deltaw_mags, data->num_samples);
+		print_vec(&delta_w_mags[l].vector, "deltawmags", false);
+		l++;
+	}
+
+	for (int i = 0; i < data->num_samples; i++) {
+		l = 0;
+		PLOOP(_net, cblock) {
+			lenergies[i][l] = gsl_vector_view_array(cblock->layer->energies[i], data->iter_counts[i]);
+			l++;
+		}
+	}
+
+	FILE *file = fopen(filename, "w");
+	if (!file) {
+		printf("[Error] Failed to open traindata file (%s)\n", filename);
+		exit(ERR_FILE);
+	}
+
+	save_data(SAVE_TYPE, size_dt, PS(SAVE_TRAIN), 0, 1, NULL, file);
+	save_data(SAVE_DELTAW_MAGS, double_dt, delta_w_mags, 1, 1, PS(_net.nlayers-1), file);
+	save_data(SAVE_ITER_COUNTS, double_dt, &iter_counts, 1, 1, PS(1), file);
+	save_data(SAVE_LENERGIES, double_dt, lenergies, 1, 2, (size_t[]){data->num_samples, _net.nlayers-1}, file);
+	save_data(SAVE_COSTS, double_dt, &train_costs, 1, 1, PS(1), file);
 
 }
 
@@ -154,7 +192,7 @@ void free_network(struct network *net) {
 	free(net);
 }
 
-void _relaxation(int index, bool training) {
+void _relaxation(bool training) {
 	printf("Starting relaxation\n");
 
 	// reset layers, epsilons and deltax hidden layers
@@ -173,10 +211,11 @@ void _relaxation(int index, bool training) {
 	do {
 		_adjust_eps();
 		_adjust_x(true);
-		stop = _check_stop(iter);
+		stop = _check_stop(iter, iter == 0);
 		iter++;
 	} while(!stop);
 
+	_trainresults->iter_counts[_train_i] = iter;
 	printf("Relaxation complete after %d iterations\n", iter);
 }
 
@@ -234,6 +273,9 @@ void _adjust_w_layer(struct block *ablock) {
 	gsl_blas_dger(_net.alpha, ablock->next->layer->epsilon, ablock->layer->act, ablock->layer->deltaw);
 	gsl_matrix_add(ablock->layer->weights, ablock->layer->deltaw);
 
+	if (_logging)
+		ablock->layer->deltaw_mags[_train_i] = frobenius_norm(ablock->layer->deltaw);
+
 	gsl_matrix_set_zero(ablock->layer->deltaw);
 }
 
@@ -255,9 +297,9 @@ double _calc_energies(int iter, bool resize) {
 			struct block_layer *layer = cblock->layer;
 
 			if (resize) {
-				double *new_ptr = realloc(layer->energies[sample_i], sizeof(double) * _net.lenergy_chunks * CHUNK_SIZE);
+				double *new_ptr = realloc(layer->energies[_train_i], sizeof(double) * _net.lenergy_chunks * CHUNK_SIZE);
 				if (new_ptr) {
-					layer->energies[sample_i] = new_ptr;
+					layer->energies[_train_i] = new_ptr;
 				} else {
 					printf("[Error] Failed to realloc lenergy data, expect errors\n");
 					return -1.0;
@@ -272,7 +314,8 @@ double _calc_energies(int iter, bool resize) {
 			gsl_blas_ddot(layer->epsilon2, layer->epsilon2, &dot);
 			dot *= 0.5;
 
-			layer->energies[sample_i][iter] = dot;
+			if (_logging)
+				layer->energies[_train_i][iter] = dot;
 			ret += dot;
 		}
 	}
@@ -285,26 +328,29 @@ void _print_lenergies(struct network net, int iter) {
 	struct block *cur_block = net.head->next;
 	while (cur_block) {
 	if (cur_block->type == block_layer) {
-			printf("\t%.40f\n", cur_block->layer->energies[sample_i][iter]);
+			printf("\t%.40f\n", cur_block->layer->energies[_train_i][iter]);
 		}
 		cur_block = cur_block->next;
 	}
 }
 
-bool _check_stop(int iter) {
+bool _check_stop(int iter, bool reset) {
 	if (_relax.max_iters && iter > _relax.max_iters)
 		return true;
 	
 	bool resize = false;
-	if ((iter + 1) >= (_net.lenergy_chunks * CHUNK_SIZE)) {
+	if (_logging && (iter + 1) >= (_net.lenergy_chunks * CHUNK_SIZE)) {
 		_net.lenergy_chunks++;
 		resize = true;
 	}
-
+	
 	static double prev_energy = 100000000.0;
+	if (reset)
+		prev_energy = 10000000000.0;
+
 	double energy = _calc_energies(iter, resize);
 	double res = prev_energy - energy;
-	printf("[%3d] energy: %e, res = %e\n", iter, energy, res);
+	// printf("[%3d] energy: %e, res = %e\n", iter, energy, res);
 	if (_relax.energy_res &&  res < _relax.energy_res) {
 		if (res < 0) {
 			printf("prev: %.60f\n", prev_energy);
@@ -332,7 +378,7 @@ void _free_block(struct block *ablock) {
 			gsl_matrix_free(ablock->layer->deltaw);
 		}
 
-		for (int i = 0; i < sample_i; i++)
+		for (int i = 0; i < _train_i; i++)
 			free(ablock->layer->energies[i]);
 		
 		free(ablock->layer->energies);

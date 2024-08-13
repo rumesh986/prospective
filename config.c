@@ -10,14 +10,6 @@
 #define CMP_STR(a, b) strcmp(a, b) == 0
 #define CMP_VAL(a, b) CMP_STR(a->valuestring, b)
 
-enum dtype {
-	int_dt,
-	size_dt,
-	double_dt,
-	bool_dt,
-	network_dt
-};
-
 struct _map_pair {
 	char *key;
 	void *value;
@@ -139,8 +131,17 @@ struct config parse_config(char *filename) {
 
 		} else if (CMP_VAL(type, "testing")) {
 			cJSON *op = cJSON_GetObjectItem(elem, "testing");
+			cJSON *label = cJSON_GetObjectItem(op, "label");
+
+			if (!label) {
+				printf("[Error][Config] Operation requires a label, exiting...\n");
+				exit(ERR_INVALID_CONFIG);
+			}
+
+			_config.operations[arr_count].label = malloc(strlen(cJSON_GetStringValue(label))+1);
+			strcpy(_config.operations[arr_count].label, cJSON_GetStringValue(label));
+
 			_config.operations[arr_count].type = op_testing;
-			_config.operations[arr_count].label = NULL;
 			struct testing *test = &_config.operations[arr_count].testing;
 
 			_set_val(op, "num_samples", &test->num_samples, PS(0), size_dt);
@@ -235,12 +236,8 @@ void save_config(char *filename) {
 				cJSON *op = cJSON_GetObjectItem(elem, "training");
 				if (_config.operations[i].label && CMP_VAL(cJSON_GetObjectItem(op, "label"), _config.operations[i].label)) {
 					cJSON *seed = cJSON_GetObjectItem(op, "seed");
-					printf("SEed value: %f\n", cJSON_GetNumberValue(seed));
-					if (cJSON_GetNumberValue(seed) == 0) {
+					if (cJSON_GetNumberValue(seed) == 0)
 						cJSON_SetNumberValue(seed, _config.operations[i].training.seed);
-						printf("Setting value to %f\n", cJSON_GetNumberValue(seed));
-					}
-					printf("SEed value: %f\n", cJSON_GetNumberValue(cJSON_GetObjectItem(op, "seed")));
 
 				}
 			}
