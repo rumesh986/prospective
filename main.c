@@ -51,25 +51,28 @@ int main(int argc, char **argv) {
 	struct tm *cur_tm = localtime(&cur_time);
 	char time_str[128];
 	strftime(time_str, 256, "%d-%m-%y_%H:%M:%S", cur_tm);
-	sprintf(results_dir, "./results/%s%s", config.label, time_str);
+	sprintf(results_dir, "./results/%s %s", config.label, time_str);
 	mkdir(results_dir, 0700);
 
 	load_db(config.db);
 
 	for (int i = 0; i < config.num_operations; i++) {
 		if (config.operations[i].type == op_training) {
-			struct training train_params = config.operations[i].training;
+			struct training *train_params = &config.operations[i].training;
 			printf("Starting train operation\n");
 			// if seed not provided or equal to zero, seed with current time
-			if (train_params.seed == 0)
-				train_params.seed = cur_time;
+			if (train_params->seed == 0)
+				train_params->seed = cur_time;
 		
-			srand(train_params.seed);
+			srand(train_params->seed);
 
-			init_network(&train_params.net, train_params.ntargets);
-			set_network(train_params.net);
-			struct traindata * train_data = train(train_params, true);
+			init_network(train_params->net);
+			set_network(train_params->net);
+			struct traindata *train_data = train(*train_params, true);
 
+			char trainfile[512];
+			sprintf(trainfile, "%s/%s.traindata", results_dir, config.operations[i].label);
+			save_traindata(train_data, trainfile);
 			// struct traindata *traindata = train(config.networks[i], true);
 			// save_traindata(config.networks[i]);
 			// build network
@@ -84,9 +87,12 @@ int main(int argc, char **argv) {
 
 	}
 
+	char conf_save_file[512];
+	sprintf(conf_save_file, "%s/%s.json", results_dir, config.label);
+	save_config(conf_save_file);
+
 	printf("Freeing DB\n");
 	free_db();
-	// free_network();
 	printf("Freeing config\n");
 	free_config(config);
 }

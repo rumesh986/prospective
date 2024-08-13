@@ -24,15 +24,16 @@ void _adjust_eps();
 void _adjust_x(bool training);
 void _adjust_w();
 bool _check_stop(int iter);
+void _free_block(struct block *ablock);
 
 // main code
 
-void init_network(struct network *net, size_t ntargets) {
+void init_network(struct network *net) {
 	printf("Initializing network...\n");
 
 	// update input and output lengths
 	net->head->layer->length = db_get_input_length();
-	net->tail->layer->length = ntargets;
+	// net->tail->layer->length = ntargets;
 
 	// for (struct block *cur_block = net.head; cur_block; cur_block=cur_block->next) {
 	for (struct block *cur_block = net->head; cur_block; cur_block=cur_block->next) {
@@ -59,8 +60,8 @@ void init_network(struct network *net, size_t ntargets) {
 	printf("Completed initialization\n");
 }
 
-void set_network(struct network net) {
-	_net = net;
+void set_network(struct network *net) {
+	_net = *net;
 }
 
 struct traindata *train(struct training train, bool logging) {
@@ -69,12 +70,12 @@ struct traindata *train(struct training train, bool logging) {
 	_relax = train.relax;
 
 	size_t max_count = db_get_count(db_train);
-	db_dataset data_train[train.ntargets];
-	db_dataset data_test[train.ntargets];
+	db_dataset data_train[_net.ntargets];
+	db_dataset data_test[_net.ntargets];
 
-	for (int i = 0; i < train.ntargets; i++) {
-		data_train[i] = db_get_dataset(db_train, train.targets[i], train.proc);
-		data_test[i] = db_get_dataset(db_test, train.targets[i], train.proc);
+	for (int i = 0; i < _net.ntargets; i++) {
+		data_train[i] = db_get_dataset(db_train, _net.targets[i], train.proc);
+		data_test[i] = db_get_dataset(db_test, _net.targets[i], train.proc);
 
 		if (data_train[i].count < max_count)
 			max_count = data_train[i].count;
@@ -82,8 +83,8 @@ struct traindata *train(struct training train, bool logging) {
 
 	size_t num_samples = train.num_samples;
 	if (num_samples == 0)
-		num_samples = max_count * train.ntargets;
-
+		num_samples = max_count * _net.ntargets;
+	
 	// prepare lenergy storage location
 	struct block *cblock;
 	FLOOP(_net, cblock) {
@@ -114,7 +115,7 @@ struct traindata *train(struct training train, bool logging) {
 
 	printf("Starting to train on %ld images\n", num_samples);
 	for (sample_i = 0; sample_i < num_samples; sample_i++) {
-		int cur_target = sample_i % train.ntargets;
+		int cur_target = sample_i % _net.ntargets;
 
 		if (cur_target == 0)
 			target_counter++;
@@ -127,7 +128,7 @@ struct traindata *train(struct training train, bool logging) {
 	}
 
 	printf("Completed training, freeing datasets\n");
-	for (int i = 0; i < train.ntargets; i++) {
+	for (int i = 0; i < _net.ntargets; i++) {
 		db_free_dataset(data_train[i]);
 		db_free_dataset(data_test[i]);
 	}
@@ -139,6 +140,18 @@ struct traindata *train(struct training train, bool logging) {
 void save_traindata(struct network *net, struct traindata *data, char *filename) {
 	gsl_vector ***lenergies = malloc(sizeof(gsl_vector **) * data->num_samples);
 
+}
+
+void free_network(struct network *net) {
+	free(net->targets);
+	struct block *cblock = net->head;
+	while (cblock->next) {
+		cblock = cblock->next;
+		_free_block(cblock->prev);
+	}
+	_free_block(cblock);
+
+	free(net);
 }
 
 void _relaxation(int index, bool training) {
@@ -304,4 +317,27 @@ bool _check_stop(int iter) {
 	}
 	
 	prev_energy = energy;
+}
+
+void _free_block(struct block *ablock) {
+	if (ablock->type == block_layer) {
+		gsl_vector_free(ablock->layer->layer);
+		gsl_vector_free(ablock->layer->act);
+		gsl_vector_free(ablock->layer->epsilon);
+		gsl_vector_free(ablock->layer->deltax);
+		gsl_vector_free(ablock->layer->epsilon2);
+		if (ablock->next) {
+			gsl_vector_free(ablock->layer->out);
+			gsl_matrix_free(ablock->layer->weights);
+			gsl_matrix_free(ablock->layer->deltaw);
+		}
+
+		for (int i = 0; i < sample_i; i++)
+			free(ablock->layer->energies[i]);
+		
+		free(ablock->layer->energies);
+		free(ablock->layer);
+	}
+
+	free(ablock);
 }

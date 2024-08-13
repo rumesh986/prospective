@@ -4,6 +4,7 @@
 #define LOGGING
 #define ERR_INVALID_CONFIG	1
 #define ERR_VEC_OPS			2
+#define ERR_MEM				3
 
 #define CHUNK_SIZE	100
 

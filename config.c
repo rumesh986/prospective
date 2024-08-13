@@ -14,7 +14,8 @@ enum dtype {
 	int_dt,
 	size_dt,
 	double_dt,
-	bool_dt
+	bool_dt,
+	network_dt
 };
 
 struct _map_pair {
@@ -54,16 +55,14 @@ struct _map _weights_map = {4, (struct _map_pair[]) {
 	{"xavier_uniform", PI(weights_xavier_uniform), int_dt}
 }};
 
-struct _map *block_map;
-struct _map *relax_map;
-struct _map *net_map;
+struct _map net_map = {0, NULL};
 
 cJSON *_config_json;
 struct config _config;
 
 cJSON *_parse_file(char *filename);
 void _set_relax(struct relaxation_params *params, char *label);
-void _set_network(struct network *net, char *label);
+struct network *_get_network(char *label);
 struct block *_get_block(char *label);
 
 void _set_enum(cJSON *main_config, char *key, void *setting, struct _map map, int default_val );
@@ -71,6 +70,9 @@ void _set_val(cJSON *main_config, char *key, void *setting, void *default_val, e
 
 void _print_network(struct network net, char *level);
 void _print_relaxation(struct relaxation_params relax, char *level);
+
+void *_search_map(struct _map map, char *label);
+void _append_map(struct _map *map, char *label, void *obj, enum dtype type);
 
 // main code
 
@@ -91,15 +93,14 @@ struct config parse_config(char *filename) {
 	_set_enum(general, "database", &_config.db, _db_map, MNIST);
 	_set_val(general, "logging", &_config.logging, PB(true), bool_dt);
 
-	if (cJSON_HasObjectItem(general, "label")) {
-		char *gen_label = cJSON_GetObjectItem(general, "label")->valuestring;
-		_config.label = malloc(strlen(gen_label)+2);
-		sprintf(_config.label, "%s ", gen_label);
-	} else {
-		// different from previous code
-		// previous code set it to "" with length 1
-		_config.label = NULL;
+	cJSON *label = cJSON_GetObjectItem(general, "label");
+	if (!label) {
+		printf("[Error][Config] config missing label. exiting...\n");
+		exit(ERR_INVALID_CONFIG);
 	}
+
+	_config.label = malloc(strlen(cJSON_GetStringValue(label))+1);
+	sprintf(_config.label, "%s", cJSON_GetStringValue(label));
 
 	// handle operations
 	int arr_count = 0;
@@ -108,8 +109,19 @@ struct config parse_config(char *filename) {
 	_config.operations = malloc(sizeof(struct operation) * _config.num_operations);
 	cJSON_ArrayForEach(elem, operations) {
 		cJSON *type = cJSON_GetObjectItem(elem, "type");
+
+
 		if (CMP_VAL(type, "training")) {
 			cJSON *op = cJSON_GetObjectItem(elem, "training");
+			cJSON *label = cJSON_GetObjectItem(op, "label");
+
+			if (!label) {
+				printf("[Error][Config] Operation requires a label, exiting...\n");
+				exit(ERR_INVALID_CONFIG);
+			}
+
+			_config.operations[arr_count].label = malloc(strlen(cJSON_GetStringValue(label))+1);
+			strcpy(_config.operations[arr_count].label, cJSON_GetStringValue(label));
 
 			_config.operations[arr_count].type = op_training;
 			struct training *train = &_config.operations[arr_count].training;
@@ -118,27 +130,17 @@ struct config parse_config(char *filename) {
 			cJSON *network_label = cJSON_GetObjectItem(op, "network");
 
 			_set_relax(&train->relax, cJSON_GetStringValue(relax_label));
-			_set_network(&train->net, cJSON_GetStringValue(network_label));
+			train->net = _get_network(cJSON_GetStringValue(network_label));
 
 			_set_enum(op, "processing", &train->proc, _proc_map, proc_normalize);
 			_set_val(op, "train_samples", &train->num_samples, PS(0), size_dt);
 			_set_val(op, "seed", &train->seed, PS(0), size_dt);
 			_set_val(op, "test_samples_per_iter", &train->test_samples_per_iters, PS(0), size_dt);
 
-			cJSON *targets = cJSON_GetObjectItem(op, "targets");
-			if (!targets || cJSON_GetArraySize(targets) == 0) {
-				printf("Targets not specified, assuming all\n");
-				train->ntargets = 0;
-				train->targets = NULL;
-			} else {
-				train->ntargets = cJSON_GetArraySize(targets);
-				train->targets = malloc(sizeof(size_t) * train->ntargets);
-				for (int i = 0; i < train->ntargets; i++)
-					train->targets[i] = cJSON_GetArrayItem(targets, i)->valueint;
-			}
 		} else if (CMP_VAL(type, "testing")) {
 			cJSON *op = cJSON_GetObjectItem(elem, "testing");
 			_config.operations[arr_count].type = op_testing;
+			_config.operations[arr_count].label = NULL;
 			struct testing *test = &_config.operations[arr_count].testing;
 
 			_set_val(op, "num_samples", &test->num_samples, PS(0), size_dt);
@@ -146,7 +148,7 @@ struct config parse_config(char *filename) {
 			cJSON *net_label = cJSON_GetObjectItem(op, "network");
 			cJSON *relax_label = cJSON_GetObjectItem(op, "relaxation");
 
-			_set_network(&test->net, cJSON_GetStringValue(net_label));
+			test->net = _get_network(cJSON_GetStringValue(net_label));
 
 			if (relax_label && !cJSON_IsNull(relax_label)) {
 				test->relax = true;
@@ -179,11 +181,6 @@ void print_config() {
 		if (_config.operations[i].type == op_training) {
 			printf("Training\n");
 			struct training training = _config.operations[i].training;
-			printf("\tntargets: %ld\n", training.ntargets);
-			printf("\ttargets: [");
-			for (int j = 0; j < training.ntargets; j++) 
-				printf("%ld ", training.targets[j]);
-			printf("]\n");
 
 			printf("\tprocessing: ");
 			switch (training.proc) {
@@ -199,14 +196,14 @@ void print_config() {
 			printf("\ttest_samples_per_iter: %ld\n", training.test_samples_per_iters);
 			_print_relaxation(training.relax, "\t");
 			printf("\tNetwork\n");
-			_print_network(training.net, "\t");
+			_print_network(*training.net, "\t");
 		} else if (_config.operations[i].type == op_testing) {
 			printf("Testing\n");
 			
 			struct testing testing = _config.operations[i].testing;
 			printf("\tnum_samples: %ld\n", testing.num_samples);
 			printf("\tNetwork\n");
-			_print_network(testing.net, "\t");
+			_print_network(*testing.net, "\t");
 			if (testing.relax)
 				_print_relaxation(testing.relax_params, "\t");
 			else
@@ -217,8 +214,65 @@ void print_config() {
 	}
 }
 
-void free_config(struct config config) {
+void save_config(char *filename) {
+	printf("Saving configuration file\n");
+	cJSON *elem;
+	cJSON *networks = cJSON_GetObjectItem(_config_json, "networks");
+	for (int i = 0; i < net_map.num; i++) {
+		cJSON_ArrayForEach(elem, networks) {
+			if (CMP_VAL(cJSON_GetObjectItem(elem, "label"), net_map.data[i].key)) {
+				struct network *net = (struct network *) net_map.data[i].value;
+				cJSON_AddNumberToObject(elem, "input_length", net->head->layer->length);
+				cJSON_AddNumberToObject(elem, "output_length", net->tail->layer->length);
+			}
+		}
+	}
 
+	cJSON *ops = cJSON_GetObjectItem(_config_json, "operations");
+	for (int i = 0; i < _config.num_operations; i++) {
+		cJSON_ArrayForEach(elem, ops) {
+			if (CMP_VAL(cJSON_GetObjectItem(elem, "type"), "training")) {
+				cJSON *op = cJSON_GetObjectItem(elem, "training");
+				if (_config.operations[i].label && CMP_VAL(cJSON_GetObjectItem(op, "label"), _config.operations[i].label)) {
+					cJSON *seed = cJSON_GetObjectItem(op, "seed");
+					printf("SEed value: %f\n", cJSON_GetNumberValue(seed));
+					if (cJSON_GetNumberValue(seed) == 0) {
+						cJSON_SetNumberValue(seed, _config.operations[i].training.seed);
+						printf("Setting value to %f\n", cJSON_GetNumberValue(seed));
+					}
+					printf("SEed value: %f\n", cJSON_GetNumberValue(cJSON_GetObjectItem(op, "seed")));
+
+				}
+			}
+		}
+	}
+
+	char *config_str = cJSON_Print(_config_json);
+	FILE *file = fopen(filename, "w");
+	if (!file) {
+		printf("[Error][Config] Failed to open file to save config\n");
+		return;
+	}
+
+	fwrite(config_str, 1, strlen(config_str), file);
+	fclose(file);
+	free(config_str);
+	printf("Finished saving configuration file\n");
+}
+
+void free_config() {
+	for (int i = 0; i < net_map.num; i++)
+		free_network((struct network *)net_map.data[i].value);
+	free(net_map.data);
+
+	free(_config.label);
+	
+	for (int i = 0; i < _config.num_operations; i++)
+		free(_config.operations[i].label);
+
+	free(_config.operations);
+
+	cJSON_Delete(_config_json);
 }
 
 // private functions
@@ -321,14 +375,32 @@ void _set_relax(struct relaxation_params *params, char *label) {
 	exit(ERR_INVALID_CONFIG);
 }
 
-void _set_network(struct network *net, char *label) {
+struct network * _get_network(char *label) {
+	// check if network has already been built
+	struct network *existing_net = _search_map(net_map, label);
+	if (existing_net)
+		return existing_net;
+
 	cJSON *networks = cJSON_GetObjectItem(_config_json, "networks");
 	cJSON *elem;
 	cJSON_ArrayForEach(elem, networks) {
 		if (CMP_VAL(cJSON_GetObjectItem(elem, "label"), label)) {
+			struct network *net = malloc(sizeof(struct network));
 			_set_val(elem, "alpha", &net->alpha, PD(0.1), double_dt);
 			_set_enum(elem, "activation", &net->act, _act_map, act_sigmoid);
 			_set_enum(elem, "weights", &net->weight_init, _weights_map, weights_xavier_uniform);
+
+			cJSON *targets = cJSON_GetObjectItem(elem, "targets");
+			if (!targets || cJSON_GetArraySize(targets) == 0) {
+				printf("Targets not specified, assuming all\n");
+				net->ntargets = 0;
+				net->targets = NULL;
+			} else {
+				net->ntargets = cJSON_GetArraySize(targets);
+				net->targets = malloc(sizeof(size_t) * net->ntargets);
+				for (int i = 0; i < net->ntargets; i++)
+					net->targets[i] = cJSON_GetArrayItem(targets, i)->valueint;
+			}
 
 			net->head = malloc(sizeof(struct block));
 			net->head->type = block_layer;
@@ -346,7 +418,6 @@ void _set_network(struct network *net, char *label) {
 				struct block *new_block = _get_block(cJSON_GetStringValue(cjson_block));
 				new_block->prev = cur_block;
 				cur_block->next = new_block;
-				// cur_block = _get_block(cJSON_GetStringValue(cjson_block));
 
 				cur_block = new_block;
 				cjson_block = cjson_block->next;
@@ -359,8 +430,10 @@ void _set_network(struct network *net, char *label) {
 
 			net->tail->type = block_layer;
 			net->tail->layer = malloc(sizeof(struct block_layer));
-			net->tail->layer->length = 0; // initial value, will be updated in init_network later on
+			net->tail->layer->length = net->ntargets;
 
+			_append_map(&net_map, label, net, network_dt);
+			return net;
 		}
 	}
 }
@@ -417,8 +490,13 @@ void _print_network(struct network net, char *level) {
 	}
 	printf("\n");
 
+	printf("\tntargets: %ld\n", net.ntargets);
+	printf("\ttargets: [");
+	for (int j = 0; j < net.ntargets; j++) 
+		printf("%ld ", net.targets[j]);
+	printf("]\n");
+
 	int index = 0;
-	printf("Linked list form:\n");
 	struct block *block = net.head;
 	while(block) {
 		printf("%sblock %d, type: ", level, index);
@@ -430,4 +508,26 @@ void _print_network(struct network net, char *level) {
 		block = block->next;
 		index++;
 	}
+}
+
+void *_search_map(struct _map map, char *label) {
+	for (int i = 0; i < map.num; i++) {
+		if (CMP_STR(map.data[i].key, label))
+			return map.data[i].value;
+	}
+	return NULL;
+}
+
+void _append_map(struct _map *map, char *label, void *obj, enum dtype type) {
+	map->num++;
+
+	struct _map_pair *new_ptr = realloc(map->data, sizeof(struct _map_pair) * map->num);
+	if (!new_ptr) {
+		printf("[Error] Unable to realloc network map, exiting\n");
+		exit(ERR_MEM);
+	} else {
+		map->data = new_ptr;
+	}
+
+	map->data[map->num-1] = (struct _map_pair){label, obj, type};
 }

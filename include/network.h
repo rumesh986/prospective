@@ -38,6 +38,9 @@ struct network {
 	struct block *head; // points to input layer, initial value is 0, real value set in init_network
 	struct block *tail; // points to output layer, initial value is 0, real value set in init_network
 
+	size_t ntargets;
+	size_t *targets;
+
 	size_t lenergy_chunks;
 
 	bool save;
@@ -62,10 +65,7 @@ struct block_layer {
 
 struct training {
 	struct relaxation_params relax;
-	struct network net;
-
-	size_t ntargets;
-	size_t *targets;
+	struct network *net;
 
 	enum db_proc proc;
 	size_t num_samples;
@@ -76,7 +76,7 @@ struct training {
 struct testing {
 	bool relax;
 	struct relaxation_params relax_params;
-	struct network net;
+	struct network *net;
 
 	size_t num_samples;
 };
@@ -112,11 +112,11 @@ struct testdata {
 	size_t num_samples;
 };
 
-void init_network(struct network *net, size_t ntargets);
-void set_network(struct network net);
+void init_network(struct network *net);
+void set_network(struct network *net);
 struct traindata *train(struct training train, bool logging);
-void save_traindata(struct network *net, struct traindata *data, char *filename);
-
+void save_traindata(struct traindata *data, char *filename);
+void free_network(struct network *net);
 
 // struct net_params *load_network(char *filename);
 // int save_network(char *filename);

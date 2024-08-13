@@ -14,7 +14,8 @@ struct operation {
 		struct testing testing;
 	};
 
-	struct network net;
+	// struct network net;
+	char *label;
 };
 
 struct config {
@@ -28,8 +29,9 @@ struct config {
 };
 
 struct config parse_config(char *filename);
-void save_config(struct config config, char *filename);
-void free_config(struct config config);
+void save_config(char *filename);
+void free_config();
 void print_config();
 
+// void free_config(struct config config);
 #endif
