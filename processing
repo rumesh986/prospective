@@ -36,8 +36,9 @@ SAVE_LABELS			= 0x25
 SAVE_PREDICTIONS	= 0x26
 SAVE_OUTPUTS		= 0x27
 SAVE_NUM_CORRECT	= 0x28
-SAVE_SIZET			= 0x31
-SAVE_DOUBLET		= 0x32
+
+SAVE_SIZET			= 0x01
+SAVE_DOUBLET		= 0x02
 
 class FileReader:
 	def __init__(self, filename):
@@ -141,7 +142,7 @@ class Network:
 		self.layers = data.get(SAVE_LAYERS)
 		self.targets = data.get(SAVE_TARGETS)
 		self.weights = data.get(SAVE_WEIGHTS)
-		self.nlayers = len(self.layers)
+		self.nlayers = data.get(SAVE_NLAYERS)
 		self.ntargets = len(self.targets)
 
 class TrainData:
@@ -158,9 +159,15 @@ class TrainData:
 		
 		self.deltaw_mags = data.get(SAVE_DELTAW_MAGS)
 		self.iter_counts = data.get(SAVE_ITER_COUNTS)
-		self.energies = data.get(SAVE_ENERGIES)
+		# self.energies = data.get(SAVE_ENERGIES)
 		self.lenergies = data.get(SAVE_LENERGIES)
 		self.train_costs = data.get(SAVE_COSTS)
+
+		if self.lenergies is not None:
+			self.energies = []
+			for sample in self.lenergies:
+				layers = np.array([np.array(x) for x in sample])
+				self.energies.append(layers.sum(axis=0))
 	
 	def plot_all(self):
 		if self.deltaw_mags is not None:

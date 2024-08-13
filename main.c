@@ -68,6 +68,9 @@ int main(int argc, char **argv) {
 
 			init_network(train_params->net);
 			set_network(train_params->net);
+			char netname[512];
+			sprintf(netname, "%s/%s", results_dir, config.operations[i].label);
+			save_network(netname);
 			struct traindata *train_data = train(*train_params, true);
 
 			char trainfile[512];

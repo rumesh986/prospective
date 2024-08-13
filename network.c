@@ -67,6 +67,29 @@ void set_network(struct network *net) {
 	_net = *net;
 }
 
+void save_network(char *filename) {
+	FILE *file = fopen(filename, "w");
+	if (!file) {
+		printf("[Error] Unable to open file to save network (%s)\n", filename);
+		exit(ERR_FILE);
+	}
+
+	size_t data[3][3] = {
+		{SAVE_TYPE, SAVE_SIZET, SAVE_NETWORK},
+		{SAVE_NLAYERS, SAVE_SIZET, _net.nlayers},
+		{SAVE_NTARGETS, SAVE_SIZET, _net.ntargets}
+	};
+
+	// printf("DOUBLECHECK: alpha = %f %p\n", data[3][2], &data[3][2]);
+	save_data(SAVE_ARRAY, 0, &data, 0, 3, NULL, file);
+
+	gsl_vector_ulong_view targets = gsl_vector_ulong_view_array(_net.targets, _net.ntargets);
+	save_data(SAVE_TARGETS, SAVE_SIZET, &targets.vector, 1, 1, PS(1), file);
+
+	fclose(file);
+	// save_data(SAVE_WEIGHTS, SAVE_DOUBLET, _net.weights, 2, 1, PS(_net.params.nlayers-1), file);
+}
+
 struct traindata *train(struct training train, bool logging) {
 	printf("Preparing to train...\n");
 
@@ -140,28 +163,32 @@ struct traindata *train(struct training train, bool logging) {
 }
 
 void save_traindata(struct traindata *data, char *filename) {
-	// gsl_vector ***lenergies = malloc(sizeof(gsl_vector **) * data->num_samples);
-	gsl_vector_view *delta_w_mags = malloc(sizeof(gsl_vector_view) * _net.nlayers-1);
-	gsl_vector_view lenergies[data->num_samples][_net.nlayers-1];
-	// gsl_vector_view delta_w_mags[_net.nlayers-1];
+	gsl_vector ***lenergies = malloc(sizeof(gsl_vector **) * data->num_samples);
+	// gsl_vector_view **delta_w_mags = malloc(sizeof(gsl_vector_view) * _net.nlayers-1);
+	// gsl_vector *lenergies[data->num_samples][_net.nlayers-1];
+	gsl_vector *delta_w_mags[_net.nlayers-1];
 	// gsl_vector *iter_counts = gsl_vector_calloc(data->num_samples);
 	// gsl_vector *train_costs = gsl_vector_calloc(data->num_samples);
 
-	gsl_vector_long_view iter_counts = gsl_vector_long_view_array(data->iter_counts, data->num_samples);
+	gsl_vector_view iter_counts = gsl_vector_view_array(data->iter_counts, data->num_samples);
 	gsl_vector_view train_costs = gsl_vector_view_array(data->train_costs, data->num_samples);
 
 	struct block *cblock;
 	int l = 0;
 	PLOOP2(_net, cblock) {
-		delta_w_mags[l] = gsl_vector_view_array(cblock->layer->deltaw_mags, data->num_samples);
-		print_vec(&delta_w_mags[l].vector, "deltawmags", false);
+		gsl_vector_view view = gsl_vector_view_array(cblock->layer->deltaw_mags, data->num_samples);
+		delta_w_mags[l] = &view.vector;
+		
+		print_vec(delta_w_mags[l], "deltawmags", false);
 		l++;
 	}
 
 	for (int i = 0; i < data->num_samples; i++) {
+		lenergies[i] = malloc(sizeof(gsl_vector *) * _net.nlayers-1);
 		l = 0;
 		PLOOP(_net, cblock) {
-			lenergies[i][l] = gsl_vector_view_array(cblock->layer->energies[i], data->iter_counts[i]);
+			gsl_vector_view view = gsl_vector_view_array(cblock->layer->energies[i], data->iter_counts[i]);
+			lenergies[i][l] = &view.vector;
 			l++;
 		}
 	}
@@ -173,11 +200,12 @@ void save_traindata(struct traindata *data, char *filename) {
 	}
 
 	save_data(SAVE_TYPE, size_dt, PS(SAVE_TRAIN), 0, 1, NULL, file);
-	save_data(SAVE_DELTAW_MAGS, double_dt, delta_w_mags, 1, 1, PS(_net.nlayers-1), file);
+	save_data(SAVE_DELTAW_MAGS, double_dt, &delta_w_mags, 1, 1, PS(_net.nlayers-1), file);
 	save_data(SAVE_ITER_COUNTS, double_dt, &iter_counts, 1, 1, PS(1), file);
 	save_data(SAVE_LENERGIES, double_dt, lenergies, 1, 2, (size_t[]){data->num_samples, _net.nlayers-1}, file);
 	save_data(SAVE_COSTS, double_dt, &train_costs, 1, 1, PS(1), file);
 
+	fclose(file);
 }
 
 void free_network(struct network *net) {
@@ -350,7 +378,7 @@ bool _check_stop(int iter, bool reset) {
 
 	double energy = _calc_energies(iter, resize);
 	double res = prev_energy - energy;
-	// printf("[%3d] energy: %e, res = %e\n", iter, energy, res);
+	printf("[%3d] energy: %e, res = %e\n", iter, energy, res);
 	if (_relax.energy_res &&  res < _relax.energy_res) {
 		if (res < 0) {
 			printf("prev: %.60f\n", prev_energy);
