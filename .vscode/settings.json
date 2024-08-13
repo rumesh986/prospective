@@ -13,6 +13,7 @@
 		"tuple": "c",
 		"type_traits": "c",
 		"utility": "c",
-		"config.h": "c"
+		"config.h": "c",
+		"vector": "c"
 	}
 }

@@ -13,7 +13,8 @@ struct relaxation_params {
 // type of block
 // needed for eventual support of CNNs
 enum block_t {
-	block_layer
+	block_layer,
+	block_cnn
 };
 
 // abstract block contains pointer to a specific block and its type
@@ -21,8 +22,8 @@ struct block {
 	enum block_t type;
 
 	union {
-		struct dense_block *dense;
 		struct block_layer *layer;
+		struct block_cnn *cnn;
 	};
 
 	struct block *prev;
@@ -66,6 +67,14 @@ struct block_layer {
 	double *deltaw_mags;
 };
 
+struct block_cnn {
+	size_t kernel_size;
+	size_t stride;
+	size_t padding;
+
+	gsl_vector *layer;
+};
+
 struct training {
 	struct relaxation_params relax;
 	struct network *net;
@@ -87,7 +96,7 @@ struct testing {
 // back to old stuff
 struct traindata {
 	// double **delta_w_mags;
-	size_t * iter_counts;
+	double *iter_counts;
 
 	// double ***lenergies;
 	double *train_costs;
@@ -113,6 +122,7 @@ struct testdata {
 
 void init_network(struct network *net);
 void set_network(struct network *net);
+void save_network(char *filename);
 struct traindata *train(struct training train, bool logging);
 void save_traindata(struct traindata *data, char *filename);
 void free_network(struct network *net);

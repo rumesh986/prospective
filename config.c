@@ -443,7 +443,7 @@ struct block *_get_block(char *label) {
 		cJSON *type = cJSON_GetObjectItem(elem, "type");
 		if (CMP_VAL(type, "layer")) {
 			cJSON *layer = cJSON_GetObjectItem(elem, "layer");
-			if (CMP_VAL(layer, "label"), label) {
+			if (CMP_VAL(cJSON_GetObjectItem(layer, "label"), label)) {
 				ret->type = block_layer;
 				ret->layer = malloc(sizeof(struct block_layer));
 				_set_val(layer, "length", &ret->layer->length, PS(0), size_dt);
@@ -452,6 +452,17 @@ struct block *_get_block(char *label) {
 				ret->next = NULL;
 				return ret;
 			}
+		} else if (CMP_VAL(type, "cnn")) {
+			cJSON *cnn = cJSON_GetObjectItem(elem, "cnn");
+			if (CMP_VAL(cJSON_GetObjectItem(cnn, "label"), label)) {
+				ret->type = block_cnn;
+				ret->cnn = malloc(sizeof(struct block_cnn));
+				_set_val(cnn, "kernel_size", &ret->cnn->kernel_size, PS(3), size_dt);
+				_set_val(cnn, "stride", &ret->cnn->stride, PS(1), size_dt);
+				_set_val(cnn, "padding", &ret->cnn->padding, PS(0), size_dt);
+				return ret;
+			}
+
 		}
 	}
 }
@@ -501,6 +512,11 @@ void _print_network(struct network net, char *level) {
 		if (block->type == block_layer) {
 			printf("Layer\n");
 			printf("%s\tLength: %ld\n", level, block->layer->length);
+		} else if (block->type == block_cnn) {
+			printf("CNN\n");
+			printf("%s\tkernel size: %ld\n", level, block->cnn->kernel_size);
+			printf("%s\tstride: %ld\n", level, block->cnn->stride);
+			printf("%s\tpadding: %ld\n", level, block->cnn->padding);
 		}
 		block = block->next;
 		index++;
