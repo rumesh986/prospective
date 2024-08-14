@@ -462,7 +462,6 @@ struct block *_get_block(char *label) {
 				_set_val(cnn, "padding", &ret->cnn->padding, PS(0), size_dt);
 				return ret;
 			}
-
 		}
 	}
 }

@@ -73,6 +73,16 @@ double frobenius_norm(gsl_matrix *mat) {
 	return sqrt(ret);
 }
 
+double mat_dot(gsl_matrix *A, gsl_matrix *B) {
+	gsl_matrix *temp = gsl_matrix_calloc(A->size1, A->size2);
+	gsl_matrix_memcpy(temp, A);
+	gsl_matrix_mul_elements(temp, B);
+
+	gsl_vector_view temp_vec = gsl_vector_view_array(temp->block, A->size1 * A->size2);
+
+	return gsl_vector_sum(&temp_vec.vector);
+}
+
 void vec2file(gsl_vector *vec, FILE *file) {
 	size_t datainfo[2] = {1, vec->size};
 	fwrite(datainfo, sizeof(size_t), 2, file);

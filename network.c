@@ -41,18 +41,18 @@ void init_network(struct network *net) {
 		if (cur_block->type == block_layer) {
 			struct block_layer *layer = cur_block->layer;
 
-			layer->layer = gsl_vector_calloc(layer->length);
-			layer->act = gsl_vector_calloc(layer->length);
-			layer->epsilon = gsl_vector_calloc(layer->length);
-			layer->deltax = gsl_vector_calloc(layer->length);
-			layer->energies = NULL;
-			layer->epsilon2 = gsl_vector_calloc(layer->length);
+			cur_block->layer = gsl_vector_calloc(layer->length);
+			cur_block->act = gsl_vector_calloc(layer->length);
+			cur_block->epsilon = gsl_vector_calloc(layer->length);
+			cur_block->deltax = gsl_vector_calloc(layer->length);
+			cur_block->energies = NULL;
+			cur_block->epsilon2 = gsl_vector_calloc(layer->length);
 
 			if (cur_block->next && cur_block->next->type == block_layer) {
-				layer->weights = gsl_matrix_calloc(cur_block->next->layer->length, layer->length);
-				layer->deltaw = gsl_matrix_calloc(cur_block->next->layer->length, layer->length);
-				layer->out = gsl_vector_calloc(cur_block->next->layer->length);
-				weight_init(layer->weights, net->weight_init);
+				cur_block->weights = gsl_matrix_calloc(cur_block->next->layer->length, layer->length);
+				cur_block->deltaw = gsl_matrix_calloc(cur_block->next->layer->length, layer->length);
+				cur_block->out = gsl_vector_calloc(cur_block->next->layer->length);
+				weight_init(cur_block->weights, net->weight_init);
 			}
 		}
 
@@ -125,10 +125,10 @@ struct traindata *train(struct training train, bool logging) {
 		struct block *cblock;
 		FLOOP(_net, cblock) {
 			if (cblock->type == block_layer) {
-				cblock->layer->deltaw_mags = malloc(sizeof(double *) * num_samples);
-				cblock->layer->energies = malloc(sizeof(double *) * num_samples);
+				cblock->deltaw_mags = malloc(sizeof(double *) * num_samples);
+				cblock->energies = malloc(sizeof(double *) * num_samples);
 				for (int i = 0; i < num_samples; i++)
-					cblock->layer->energies[i] = NULL;
+					cblock->energies[i] = NULL;
 				
 			}
 		}
@@ -141,8 +141,8 @@ struct traindata *train(struct training train, bool logging) {
 		if (cur_target == 0)
 			target_counter++;
 		
-		gsl_vector_memcpy(_net.head->layer->layer, data_train[cur_target].images[target_counter]);
-		gsl_vector_set_basis(_net.tail->layer->layer, cur_target);
+		gsl_vector_memcpy(_net.head->layer, data_train[cur_target].images[target_counter]);
+		gsl_vector_set_basis(_net.tail->layer, cur_target);
 	
 		_relaxation(true);
 		_adjust_w();
@@ -176,7 +176,7 @@ void save_traindata(struct traindata *data, char *filename) {
 	struct block *cblock;
 	int l = 0;
 	PLOOP2(_net, cblock) {
-		gsl_vector_view view = gsl_vector_view_array(cblock->layer->deltaw_mags, data->num_samples);
+		gsl_vector_view view = gsl_vector_view_array(cblock->deltaw_mags, data->num_samples);
 		delta_w_mags[l] = &view.vector;
 		
 		print_vec(delta_w_mags[l], "deltawmags", false);
@@ -187,7 +187,7 @@ void save_traindata(struct traindata *data, char *filename) {
 		lenergies[i] = malloc(sizeof(gsl_vector *) * _net.nlayers-1);
 		l = 0;
 		PLOOP(_net, cblock) {
-			gsl_vector_view view = gsl_vector_view_array(cblock->layer->energies[i], data->iter_counts[i]);
+			gsl_vector_view view = gsl_vector_view_array(cblock->energies[i], data->iter_counts[i]);
 			lenergies[i][l] = &view.vector;
 			l++;
 		}
@@ -227,9 +227,9 @@ void _relaxation(bool training) {
 	struct block *cur_block;
 	HLOOP(_net, cur_block) {
 		if (cur_block->type == block_layer) {
-			gsl_vector_set_zero(cur_block->layer->layer);
-			gsl_vector_set_zero(cur_block->layer->epsilon);
-			gsl_vector_set_zero(cur_block->layer->deltax);
+			gsl_vector_set_zero(cur_block->layer);
+			gsl_vector_set_zero(cur_block->epsilon);
+			gsl_vector_set_zero(cur_block->deltax);
 		}
 	}
 
@@ -251,35 +251,55 @@ void _prop_layer(struct block *ablock) {
 	if (ablock->type == block_layer) {
 		struct block_layer *layer = ablock->layer;
 
-		activation_inplace(layer->layer, layer->act, _net.act);
-		gsl_blas_dgemv(CblasNoTrans, 1.0, layer->weights, layer->act, 0.0, layer->out);
+		activation_inplace(ablock->layer, ablock->act, _net.act);
+		gsl_blas_dgemv(CblasNoTrans, 1.0, ablock->weights, ablock->act, 0.0, ablock->out);
+	} else if (ablock->type == block_cnn) {
+		for (int i = 0; i < ablock->out->size; i++) {
+			struct block_cnn *cnn = ablock->cnn;
+			struct db_image_info img_shape = db_get_image_info();
+			cnn->layer_mat = gsl_matrix_view_vector(ablock->layer, img_shape.size1, img_shape.size2);
+			gsl_matrix_view mat_view = gsl_matrix_submatrix(&cnn->layer_mat.matrix, i / img_shape.size2, i % img_shape.size2 , cnn->kernel_size, cnn->kernel_size);
+
+			gsl_vector_set(ablock->out, i, mat_dot(ablock->weights, &mat_view.matrix));
+		}
 	}
 }
 
-void _adjust_eps_layer(struct block *ablock) {
-	struct block_layer *layer = ablock->layer;
-	gsl_vector_memcpy(layer->epsilon, layer->layer);
-	_prop_layer(ablock->prev);
-	gsl_vector_sub(layer->epsilon, ablock->prev->layer->out);
-}
+// void _adjust_eps_layer(struct block *ablock) {
+// 	gsl_vector_memcpy(ablock->epsilon, ablock->layer);
+// 	_prop_layer(ablock->prev);
+// 	gsl_vector_sub(ablock->epsilon, ablock->prev->out);
+// }
+
+// void _adjust_eps_cnn(struct block *ablock) {
+// 	struct block_cnn *cnn = ablock->cnn;
+// 	gsl_vector_memcpy(cnn->epsilon, cnn->layer);
+// 	_prop_layer(ablock->prev);
+// 	gsl_vector_sub(cnn->epsilon, ablock->prev);
+// }
 
 void _adjust_eps() {
 	struct block *cblock;
 	PLOOP(_net, cblock) {
-		switch (cblock->type) {
-			case block_layer:	_adjust_eps_layer(cblock);	break;
-		}
+		gsl_vector_memcpy(cblock->epsilon, cblock->layer);
+		_prop_layer(cblock->prev);
+		gsl_vector_sub(cblock->epsilon, cblock->prev->out);
+
+		// switch (cblock->type) {
+		// 	case block_layer:	_adjust_eps_layer(cblock);	break;
+		// 	case block_cnn: 	_adjust_eps_cnn(cblock);	break;
+		// }
 	}
 }
 
 void _adjust_x_layer(struct block *ablock) {
 	struct block_layer *layer = ablock->layer;
-	activation_deriv_inplace(layer->layer, layer->act, _net.act);
-	gsl_blas_dgemv(CblasTrans, _relax.gamma, layer->weights, ablock->next->layer->epsilon, 0.0, layer->deltax);
-	gsl_vector_mul(layer->deltax, layer->act);
+	activation_deriv_inplace(ablock->layer, ablock->act, _net.act);
+	gsl_blas_dgemv(CblasTrans, _relax.gamma, ablock->weights, ablock->next->epsilon, 0.0, ablock->deltax);
+	gsl_vector_mul(ablock->deltax, ablock->act);
 
-	gsl_blas_daxpy(-_relax.gamma, layer->epsilon, layer->deltax);
-	gsl_vector_add(layer->layer, layer->deltax);
+	gsl_blas_daxpy(-_relax.gamma, ablock->epsilon, ablock->deltax);
+	gsl_vector_add(ablock->layer, ablock->deltax);
 }
 
 void _adjust_x(bool training) {
@@ -288,30 +308,36 @@ void _adjust_x(bool training) {
 	HLOOP(_net, cblock) {
 		switch (cblock->type) {
 			case block_layer:	_adjust_x_layer(cblock);	break;
+			case block_cnn:		_adjust_x_cnn(cblock);		break;
 		}
 	}
 
 	if (!training)
-		gsl_blas_daxpy(-_relax.gamma, _net.tail->layer->epsilon, _net.tail->layer->layer);
+		gsl_blas_daxpy(-_relax.gamma, _net.tail->epsilon, _net.tail->layer);
 }
 
 void _adjust_w_layer(struct block *ablock) {
-	activation_inplace(ablock->layer->layer, ablock->layer->act, _net.act);
+	activation_inplace(ablock->layer, ablock->act, _net.act);
 
-	gsl_blas_dger(_net.alpha, ablock->next->layer->epsilon, ablock->layer->act, ablock->layer->deltaw);
-	gsl_matrix_add(ablock->layer->weights, ablock->layer->deltaw);
+	gsl_blas_dger(_net.alpha, ablock->next->epsilon, ablock->act, ablock->deltaw);
+	gsl_matrix_add(ablock->weights, ablock->deltaw);
 
 	if (_logging)
-		ablock->layer->deltaw_mags[_train_i] = frobenius_norm(ablock->layer->deltaw);
+		ablock->deltaw_mags[_train_i] = frobenius_norm(ablock->deltaw);
 
-	gsl_matrix_set_zero(ablock->layer->deltaw);
+	gsl_matrix_set_zero(ablock->deltaw);
+}
+
+void _adjust_w_cnn(struct block *ablock) {
+
 }
 
 void _adjust_w() {
 	struct block *cblock;
 	PLOOP2(_net, cblock) {
 		switch (cblock->type) {
-			case block_layer: _adjust_w_layer(cblock);	break;
+			case block_layer:	_adjust_w_layer(cblock);	break;
+			case block_cnn:		_adjust_w_cnn(cblock);		break;
 		}
 	}
 }
@@ -325,25 +351,25 @@ double _calc_energies(int iter, bool resize) {
 			struct block_layer *layer = cblock->layer;
 
 			if (resize) {
-				double *new_ptr = realloc(layer->energies[_train_i], sizeof(double) * _net.lenergy_chunks * CHUNK_SIZE);
+				double *new_ptr = realloc(cblock->energies[_train_i], sizeof(double) * _net.lenergy_chunks * CHUNK_SIZE);
 				if (new_ptr) {
-					layer->energies[_train_i] = new_ptr;
+					cblock->energies[_train_i] = new_ptr;
 				} else {
 					printf("[Error] Failed to realloc lenergy data, expect errors\n");
 					return -1.0;
 				}
 			}
 
-			gsl_vector_memcpy(layer->epsilon2, layer->layer);
+			gsl_vector_memcpy(cblock->epsilon2, cblock->layer);
 			_prop_layer(cblock->prev);
-			gsl_vector_sub(layer->epsilon2, cblock->prev->layer->out);
+			gsl_vector_sub(cblock->epsilon2, cblock->prev->out);
 
 			double dot;
-			gsl_blas_ddot(layer->epsilon2, layer->epsilon2, &dot);
+			gsl_blas_ddot(cblock->epsilon2, cblock->epsilon2, &dot);
 			dot *= 0.5;
 
 			if (_logging)
-				layer->energies[_train_i][iter] = dot;
+				cblock->energies[_train_i][iter] = dot;
 			ret += dot;
 		}
 	}
@@ -356,7 +382,7 @@ void _print_lenergies(struct network net, int iter) {
 	struct block *cur_block = net.head->next;
 	while (cur_block) {
 	if (cur_block->type == block_layer) {
-			printf("\t%.40f\n", cur_block->layer->energies[_train_i][iter]);
+			printf("\t%.40f\n", cur_block->energies[_train_i][iter]);
 		}
 		cur_block = cur_block->next;
 	}
@@ -394,22 +420,24 @@ bool _check_stop(int iter, bool reset) {
 }
 
 void _free_block(struct block *ablock) {
-	if (ablock->type == block_layer) {
-		gsl_vector_free(ablock->layer->layer);
-		gsl_vector_free(ablock->layer->act);
-		gsl_vector_free(ablock->layer->epsilon);
-		gsl_vector_free(ablock->layer->deltax);
-		gsl_vector_free(ablock->layer->epsilon2);
-		if (ablock->next) {
-			gsl_vector_free(ablock->layer->out);
-			gsl_matrix_free(ablock->layer->weights);
-			gsl_matrix_free(ablock->layer->deltaw);
-		}
+	gsl_vector_free(ablock->layer);
+	gsl_vector_free(ablock->act);
+	gsl_vector_free(ablock->epsilon);
+	gsl_vector_free(ablock->deltax);
+	gsl_vector_free(ablock->epsilon2);
 
-		for (int i = 0; i < _train_i; i++)
-			free(ablock->layer->energies[i]);
-		
-		free(ablock->layer->energies);
+	if (ablock->next) {
+		gsl_vector_free(ablock->out);
+		gsl_matrix_free(ablock->weights);
+		gsl_matrix_free(ablock->deltaw);
+	}
+
+	for (int i = 0; i < _train_i; i++)
+		free(ablock->energies[i]);
+	
+	free(ablock->energies);
+
+	if (ablock->type == block_layer) {
 		free(ablock->layer);
 	}
 

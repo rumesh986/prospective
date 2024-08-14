@@ -28,6 +28,21 @@ struct block {
 
 	struct block *prev;
 	struct block *next;
+
+	gsl_vector *layer;
+	gsl_vector *act;	// used to calculate activated versions or derivative of activation versions
+	gsl_vector *epsilon;
+	gsl_vector *out;
+
+	gsl_matrix *weights;
+
+	gsl_vector *deltax;
+	gsl_matrix *deltaw;
+
+	gsl_vector *epsilon2;	// used when calculating energies, without disturbing epsilon
+
+	double **energies;
+	double *deltaw_mags;
 };
 
 // collection of blocks
@@ -50,21 +65,6 @@ struct network {
 
 struct block_layer {
 	size_t length;
-
-	gsl_vector *layer;
-	gsl_vector *act;	// used to calculate activated versions or derivative of activation versions
-	gsl_vector *epsilon;
-	gsl_vector *out;
-
-	gsl_matrix *weights;
-
-	gsl_vector *deltax;
-	gsl_matrix *deltaw;
-
-	gsl_vector *epsilon2;	// used when calculating energies, without disturbing epsilon
-
-	double **energies;
-	double *deltaw_mags;
 };
 
 struct block_cnn {
@@ -72,7 +72,9 @@ struct block_cnn {
 	size_t stride;
 	size_t padding;
 
-	gsl_vector *layer;
+	size_t length;
+	gsl_matrix_view layer_mat;
+
 };
 
 struct training {
