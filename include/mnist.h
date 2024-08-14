@@ -30,6 +30,7 @@ mnist_dataset mnist_get_dataset(mnist_set set, int label, mnist_processing proce
 
 size_t mnist_get_count(mnist_set set);
 size_t mnist_get_input_length();
+struct db_image_info mnist_get_image_info();
 int mnist_get_label(mnist_set set, int index);
 
 void free_mnist();

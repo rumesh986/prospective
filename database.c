@@ -48,6 +48,11 @@ size_t db_get_input_length() {
 	return mnist_get_input_length();
 }
 
+struct db_image_info db_get_image_info() {
+	return mnist_get_image_info();
+}
+
+
 void free_db() {
 	free_mnist();
 }

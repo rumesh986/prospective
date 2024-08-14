@@ -1,5 +1,6 @@
 #include <gsl/gsl_matrix.h>
 
+#include "include/database.h"
 #include "include/mnist.h"
 
 // local header
@@ -86,6 +87,11 @@ size_t mnist_get_count(mnist_set set) {
 size_t mnist_get_input_length() {
 	return _mnist.img_length;
 }
+
+struct db_image_info mnist_get_image_info() {
+	return (struct db_image_info){_mnist.img_shape[0], _mnist.img_shape[1], _mnist.img_length};
+}
+
 
 int mnist_get_label(mnist_set set, int index) {
 	switch (set) {
