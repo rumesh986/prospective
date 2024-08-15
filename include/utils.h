@@ -21,6 +21,7 @@ gsl_vector *vec_ops(gsl_vector *inp, double(*op)(double));
 void vec_ops_inplace(gsl_vector *inp, gsl_vector *out, double(*op)(double));
 
 double frobenius_norm(gsl_matrix *mat);
+double mat_dot(gsl_matrix *A, gsl_matrix *B);
 
 void vec2file(gsl_vector *vec, FILE *file);
 void mat2file(gsl_matrix *mat, FILE *file);

@@ -127,6 +127,7 @@ class Network:
 	def __init__(self, filename):
 		self.file = FileReader(filename)
 		self.dir, self.netname = self.file.get_name()
+
 		data = self.file.read_data([SAVE_TYPE, SAVE_MNIST_TYPE, SAVE_MNIST_PROC, SAVE_GAMMA, SAVE_ALPHA, SAVE_ACT, SAVE_WEIGHTS_INIT, SAVE_LAYERS, SAVE_TARGETS, SAVE_WEIGHTS])
 
 		if (data[SAVE_TYPE] != SAVE_NETWORK):
@@ -188,10 +189,12 @@ class TrainData:
 class TestData:
 	def __init__(self, filename, net):
 		self.file = FileReader(filename)
+		dir, file = filename.rsplit('/', 1)
+		basename, _ = file.rsplit('.', 1)
 		self.net = net
-		self.plt = Plotter(net, prefix="Test")
+		self.plt = Plotter(net, prefix=f"Test_{basename}")
 
-		data = self.file.read_data([SAVE_TYPE, SAVE_LABELS, SAVE_PREDICTIONS, SAVE_COSTS, SAVE_OUTPUTS, SAVE_ENERGIES, SAVE_LENERGIES, SAVE_ITER_COUNTS])
+		data = self.file.read_data([SAVE_TYPE, SAVE_LABELS, SAVE_PREDICTIONS, SAVE_COSTS, SAVE_OUTPUTS, SAVE_LENERGIES, SAVE_ITER_COUNTS])
 
 		if (data[SAVE_TYPE] != SAVE_TEST):
 			print("ERROR: filetype does not match class")
@@ -201,13 +204,20 @@ class TestData:
 		self.predictions = data.get(SAVE_PREDICTIONS)
 		self.costs = data.get(SAVE_COSTS)
 		self.outputs = data.get(SAVE_OUTPUTS)
-		self.energies = data.get(SAVE_ENERGIES)
+		# self.energies = data.get(SAVE_ENERGIES)
 		self.lenergies = data.get(SAVE_LENERGIES)
 		self.iter_counts = data.get(SAVE_ITER_COUNTS)
 
+		if self.lenergies is not None:
+			self.energies = []
+			for sample in self.lenergies:
+				layers = np.array([np.array(x) for x in sample])
+				self.energies.append(layers.sum(axis=0))
+		else:
+			self.energies = None
+
 	def plot_all(self):
 		if self.costs is not None:
-			print(self.costs)
 			self.plt.plot_costs(self.costs)
 		if self.labels is not None and self.predictions is not None:
 			self.plt.plot_preds(self.labels, self.predictions)
@@ -370,5 +380,7 @@ if __name__ == '__main__':
 	train.plot_all()
 	# print(train.lenergies)
 
-	test = TestData(f"{network}.testdata", net)
-	test.plot_all()
+	for file in os.listdir(args.folder):
+		if file.endswith('testdata'):
+			test = TestData(f"{args.folder}/{file}", net)
+			test.plot_all()

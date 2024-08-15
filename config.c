@@ -124,7 +124,6 @@ struct config parse_config(char *filename) {
 			_set_relax(&train->relax, cJSON_GetStringValue(relax_label));
 			train->net = _get_network(cJSON_GetStringValue(network_label));
 
-			_set_enum(op, "processing", &train->proc, _proc_map, proc_normalize);
 			_set_val(op, "train_samples", &train->num_samples, PS(0), size_dt);
 			_set_val(op, "seed", &train->seed, PS(0), size_dt);
 			_set_val(op, "test_samples_per_iter", &train->test_samples_per_iters, PS(0), size_dt);
@@ -168,7 +167,9 @@ struct config parse_config(char *filename) {
 }
 
 void print_config() {
+	printf("trial for wtf is going\n");
 	printf("DB: ");
+	printf("on like seriously\n");
 	switch (_config.db) {
 		case MNIST: 		printf("MNIST");		break;
 		case FashionMNIST:	printf("FashionMNIST");	break;
@@ -182,15 +183,6 @@ void print_config() {
 		if (_config.operations[i].type == op_training) {
 			printf("Training\n");
 			struct training training = _config.operations[i].training;
-
-			printf("\tprocessing: ");
-			switch (training.proc) {
-				case proc_original: 	printf("None");			break;
-				case proc_normalize:	printf("Normalize");	break;
-				case proc_binarize:		printf("Binarize");		break;
-				default:				printf("Unknown");		break;
-			}
-			printf("\n");
 
 			printf("\tnum_samples: %ld\n", training.num_samples);
 			printf("\tseed: %ld\n", training.seed);
@@ -223,8 +215,8 @@ void save_config(char *filename) {
 		cJSON_ArrayForEach(elem, networks) {
 			if (CMP_VAL(cJSON_GetObjectItem(elem, "label"), net_map.data[i].key)) {
 				struct network *net = (struct network *) net_map.data[i].value;
-				cJSON_AddNumberToObject(elem, "input_length", net->head->layer->length);
-				cJSON_AddNumberToObject(elem, "output_length", net->tail->layer->length);
+				cJSON_AddNumberToObject(elem, "input_length", net->head->blayer->length);
+				cJSON_AddNumberToObject(elem, "output_length", net->tail->blayer->length);
 			}
 		}
 	}
@@ -386,6 +378,7 @@ struct network * _get_network(char *label) {
 			_set_val(elem, "alpha", &net->alpha, PD(0.1), double_dt);
 			_set_enum(elem, "activation", &net->act, _act_map, act_sigmoid);
 			_set_enum(elem, "weights", &net->weight_init, _weights_map, weights_xavier_uniform);
+			_set_enum(elem, "processing", &net->proc, _proc_map, proc_normalize);
 
 			cJSON *targets = cJSON_GetObjectItem(elem, "targets");
 			if (!targets || cJSON_GetArraySize(targets) == 0) {
@@ -401,8 +394,8 @@ struct network * _get_network(char *label) {
 
 			net->head = malloc(sizeof(struct block));
 			net->head->type = block_layer;
-			net->head->layer = malloc(sizeof(struct block_layer));
-			net->head->layer->length = 0; // initial value, will be updated in init_network later on
+			net->head->blayer = malloc(sizeof(struct block_layer));
+			net->head->blayer->length = 0; // initial value, will be updated in init_network later on
 			net->head->prev = NULL;
 			net->head->next = NULL;
 
@@ -426,8 +419,8 @@ struct network * _get_network(char *label) {
 			cur_block->next = net->tail;
 
 			net->tail->type = block_layer;
-			net->tail->layer = malloc(sizeof(struct block_layer));
-			net->tail->layer->length = net->ntargets;
+			net->tail->blayer = malloc(sizeof(struct block_layer));
+			net->tail->blayer->length = net->ntargets;
 
 			_append_map(&net_map, label, net, network_dt);
 			return net;
@@ -445,8 +438,8 @@ struct block *_get_block(char *label) {
 			cJSON *layer = cJSON_GetObjectItem(elem, "layer");
 			if (CMP_VAL(cJSON_GetObjectItem(layer, "label"), label)) {
 				ret->type = block_layer;
-				ret->layer = malloc(sizeof(struct block_layer));
-				_set_val(layer, "length", &ret->layer->length, PS(0), size_dt);
+				ret->blayer = malloc(sizeof(struct block_layer));
+				_set_val(layer, "length", &ret->blayer->length, PS(0), size_dt);
 
 				ret->prev = NULL;
 				ret->next = NULL;
@@ -497,6 +490,15 @@ void _print_network(struct network net, char *level) {
 	}
 	printf("\n");
 
+	printf("\tprocessing: ");
+			switch (net.proc) {
+				case proc_original: 	printf("None");			break;
+				case proc_normalize:	printf("Normalize");	break;
+				case proc_binarize:		printf("Binarize");		break;
+				default:				printf("Unknown");		break;
+			}
+			printf("\n");
+
 	printf("\tntargets: %ld\n", net.ntargets);
 	printf("\ttargets: [");
 	for (int j = 0; j < net.ntargets; j++) 
@@ -510,7 +512,7 @@ void _print_network(struct network net, char *level) {
 
 		if (block->type == block_layer) {
 			printf("Layer\n");
-			printf("%s\tLength: %ld\n", level, block->layer->length);
+			printf("%s\tLength: %ld\n", level, block->blayer->length);
 		} else if (block->type == block_cnn) {
 			printf("CNN\n");
 			printf("%s\tkernel size: %ld\n", level, block->cnn->kernel_size);

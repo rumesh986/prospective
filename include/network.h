@@ -22,7 +22,7 @@ struct block {
 	enum block_t type;
 
 	union {
-		struct block_layer *layer;
+		struct block_layer *blayer;
 		struct block_cnn *cnn;
 	};
 
@@ -30,16 +30,19 @@ struct block {
 	struct block *next;
 
 	gsl_vector *layer;
-	gsl_vector *act;	// used to calculate activated versions or derivative of activation versions
 	gsl_vector *epsilon;
-	gsl_vector *out;
+
+	// gsl_vector *act;	// used to calculate activated versions or derivative of activation versions
+	// gsl_vector *out;
 
 	gsl_matrix *weights;
 
 	gsl_vector *deltax;
 	gsl_matrix *deltaw;
 
-	gsl_vector *epsilon2;	// used when calculating energies, without disturbing epsilon
+	gsl_vector *tlayer;
+	gsl_vector *tepsilon;	// used when calculating energies, without disturbing epsilon
+
 
 	double **energies;
 	double *deltaw_mags;
@@ -50,6 +53,7 @@ struct network {
 	double alpha;
 	enum activation act;
 	enum weights_init weight_init;
+	enum db_proc proc;
 
 	struct block *head; // points to input layer, initial value is 0, real value set in init_network
 	struct block *tail; // points to output layer, initial value is 0, real value set in init_network
@@ -74,14 +78,12 @@ struct block_cnn {
 
 	size_t length;
 	gsl_matrix_view layer_mat;
-
 };
 
 struct training {
 	struct relaxation_params relax;
 	struct network *net;
 
-	enum db_proc proc;
 	size_t num_samples;
 	size_t seed;
 	size_t test_samples_per_iters;
@@ -97,48 +99,42 @@ struct testing {
 
 // back to old stuff
 struct traindata {
-	// double **delta_w_mags;
 	double *iter_counts;
-
-	// double ***lenergies;
 	double *train_costs;
-
 	size_t num_samples;
 };
 
 struct testdata {
-	gsl_matrix *confusion;
 	gsl_vector **costs;
 
 	gsl_vector *labels;
 	gsl_vector *predictions;
 	gsl_vector **outputs;
 
-	gsl_vector **energies;
-	gsl_vector ***lenergies;
 	gsl_vector *iter_counts;
 
 	size_t num_correct;
 	size_t num_samples;
+
+	bool relax;
 };
 
 void init_network(struct network *net);
 void set_network(struct network *net);
 void save_network(char *filename);
-struct traindata *train(struct training train, bool logging);
-void save_traindata(struct traindata *data, char *filename);
 void free_network(struct network *net);
+void clear_block_data();
 
 // struct net_params *load_network(char *filename);
-// int save_network(char *filename);
-// void free_network();
 
-// struct traindata *train(struct training_params train_params);
-// int save_traindata(struct traindata *data, char *filename);
+struct traindata *train(struct training train, bool logging);
+void save_traindata(struct traindata *data, char *filename);
+
 // void free_traindata(struct traindata *data);
 
-// struct testdata *test(struct testing_params test_params, bool relaxation);
-// int save_testdata(struct testdata *data, char *filename);
+struct testdata *test(struct testing test, bool logging);
+void save_testdata(struct testdata *data, char *filename);
+
 // void free_testdata(struct testdata *data);
 
 void trial_network();

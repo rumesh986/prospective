@@ -76,6 +76,7 @@ int main(int argc, char **argv) {
 			char trainfile[512];
 			sprintf(trainfile, "%s/%s.traindata", results_dir, config.operations[i].label);
 			save_traindata(train_data, trainfile);
+			// clear_block_data();
 			// struct traindata *traindata = train(config.networks[i], true);
 			// save_traindata(config.networks[i]);
 			// build network
@@ -84,6 +85,12 @@ int main(int argc, char **argv) {
 			// save results 
 
 		} else if (config.operations[i].type == op_testing) {
+			struct testdata *test_data = test(config.operations[i].testing, config.logging);
+
+			char testfile[512];
+			sprintf(testfile, "%s/%s.testdata", results_dir, config.operations[i].label);
+
+			save_testdata(test_data, testfile);
 			// test
 			// save results
 		}
