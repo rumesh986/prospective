@@ -150,7 +150,9 @@ class TrainData:
 	def __init__(self, filename, net):
 		self.file = FileReader(filename)
 		self.net = net
-		self.plt = Plotter(net, prefix="Train")
+		_, file = filename.rsplit('/', 1)
+		basename, _ = file.rsplit('.', 1)
+		self.plt = Plotter(net, prefix=f"Train_{basename}")
 
 		data = self.file.read_data([SAVE_TYPE, SAVE_DELTAW_MAGS, SAVE_ITER_COUNTS, SAVE_ENERGIES, SAVE_LENERGIES, SAVE_COSTS])
 
@@ -372,6 +374,33 @@ if __name__ == '__main__':
 		folders = os.listdir('results')
 		paths = [os.path.join('results', basename) for basename in folders]
 		args.folder = f'{max(paths, key=os.path.getctime)}'
+
+	networks = [f"{args.folder}/{x}" for x in os.listdir(args.folder) if x.endswith(".net")]
+	for network in networks:
+		print(f"Processing {network}")
+		net = Network(network)
+
+		basename, _ = network.rsplit('.', 1)
+
+		traindata = f"{basename}.traindata"
+		testdata = f"{basename}.testdata"
+
+		print(f"traindata = {traindata}")
+		print(f"testdata = {testdata}")
+		# if traindata in os.listdir(args.folder):
+		if os.path.isfile(traindata):
+			print(f"processing {traindata}")
+			train = TrainData(traindata, net)
+			train.plot_all()
+		
+		# if testdata in os.listdir(args.folder):
+		if os.path.isfile(testdata):
+			print(f"processing {testdata}")
+			test = TestData(testdata, net)
+			test.plot_all()
+		
+	
+	exit()
 
 	network = f"{args.folder}/{[x for x in os.listdir(args.folder) if '.' not in x][0]}"
 

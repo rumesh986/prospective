@@ -2,7 +2,8 @@
 	"general": {
 		"logging": true,
 		"database": "mnist",
-		"label": "trial"
+		"label": "trial",
+		"results_dir": null
 	},
 	"blocks": [
 		{
@@ -79,7 +80,7 @@
 		{
 			"type": "training",
 			"training": {
-				"label": "default_train_op",
+				"label": "mlp_network1",
 				"network": "mlp_network1",
 				"train_samples": 1000,
 				"seed": 0,

@@ -26,6 +26,7 @@ struct config {
 
 	bool logging;
 	char *label;
+	char *results_dir;
 };
 
 struct config parse_config(char *filename);

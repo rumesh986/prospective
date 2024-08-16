@@ -51,7 +51,7 @@ int main(int argc, char **argv) {
 	struct tm *cur_tm = localtime(&cur_time);
 	char time_str[128];
 	strftime(time_str, 256, "%d-%m-%y_%H:%M:%S", cur_tm);
-	sprintf(results_dir, "./results/%s %s", config.label, time_str);
+	sprintf(results_dir, "%s/%s %s", config.results_dir, config.label, time_str);
 	mkdir(results_dir, 0700);
 
 	load_db(config.db);
@@ -69,13 +69,14 @@ int main(int argc, char **argv) {
 			init_network(train_params->net);
 			set_network(train_params->net);
 			char netname[512];
-			sprintf(netname, "%s/%s", results_dir, config.operations[i].label);
+			sprintf(netname, "%s/%s.net", results_dir, config.operations[i].label);
 			save_network(netname);
 			struct traindata *train_data = train(*train_params, true);
 
 			char trainfile[512];
 			sprintf(trainfile, "%s/%s.traindata", results_dir, config.operations[i].label);
 			save_traindata(train_data, trainfile);
+			free_traindata(train_data);
 			// clear_block_data();
 			// struct traindata *traindata = train(config.networks[i], true);
 			// save_traindata(config.networks[i]);
@@ -85,12 +86,13 @@ int main(int argc, char **argv) {
 			// save results 
 
 		} else if (config.operations[i].type == op_testing) {
+			set_network(config.operations[i].testing.net);
 			struct testdata *test_data = test(config.operations[i].testing, config.logging);
-
 			char testfile[512];
 			sprintf(testfile, "%s/%s.testdata", results_dir, config.operations[i].label);
 
 			save_testdata(test_data, testfile);
+			free_testdata(test_data);
 			// test
 			// save results
 		}

@@ -54,6 +54,7 @@ struct config _config;
 
 cJSON *_parse_file(char *filename);
 void _set_relax(struct relaxation_params *params, char *label);
+struct network *_set_network(char *net_label, char *op_label);
 struct network *_get_network(char *label);
 struct block *_get_block(char *label);
 
@@ -94,6 +95,15 @@ struct config parse_config(char *filename) {
 	_config.label = malloc(strlen(cJSON_GetStringValue(label))+1);
 	sprintf(_config.label, "%s", cJSON_GetStringValue(label));
 
+	cJSON *results_dir = cJSON_GetObjectItem(general, "results_dir");
+	if (results_dir && !cJSON_IsNull(results_dir)) {
+		_config.results_dir = malloc(strlen(cJSON_GetStringValue(results_dir))+1);
+		sprintf(_config.results_dir, "%s", cJSON_GetStringValue(results_dir));
+	} else {
+		_config.results_dir = malloc(11);
+		sprintf(_config.results_dir, "./results");
+	}
+
 	// handle operations
 	int arr_count = 0;
 	cJSON *elem;
@@ -122,7 +132,7 @@ struct config parse_config(char *filename) {
 			cJSON *network_label = cJSON_GetObjectItem(op, "network");
 
 			_set_relax(&train->relax, cJSON_GetStringValue(relax_label));
-			train->net = _get_network(cJSON_GetStringValue(network_label));
+			train->net = _set_network(cJSON_GetStringValue(network_label), cJSON_GetStringValue(label));
 
 			_set_val(op, "train_samples", &train->num_samples, PS(0), size_dt);
 			_set_val(op, "seed", &train->seed, PS(0), size_dt);
@@ -255,6 +265,7 @@ void free_config() {
 	free(net_map.data);
 
 	free(_config.label);
+	free(_config.results_dir);
 	
 	for (int i = 0; i < _config.num_operations; i++)
 		free(_config.operations[i].label);
@@ -369,11 +380,16 @@ struct network * _get_network(char *label) {
 	struct network *existing_net = _search_map(net_map, label);
 	if (existing_net)
 		return existing_net;
+	
+	printf("Unable to find network, check config. exiting...\n");
+	exit(ERR_INVALID_CONFIG);
+}
 
+struct network *_set_network(char *net_label, char *op_label) {
 	cJSON *networks = cJSON_GetObjectItem(_config_json, "networks");
 	cJSON *elem;
 	cJSON_ArrayForEach(elem, networks) {
-		if (CMP_VAL(cJSON_GetObjectItem(elem, "label"), label)) {
+		if (CMP_VAL(cJSON_GetObjectItem(elem, "label"), net_label)) {
 			struct network *net = malloc(sizeof(struct network));
 			_set_val(elem, "alpha", &net->alpha, PD(0.1), double_dt);
 			_set_enum(elem, "activation", &net->act, _act_map, act_sigmoid);
@@ -422,7 +438,7 @@ struct network * _get_network(char *label) {
 			net->tail->blayer = malloc(sizeof(struct block_layer));
 			net->tail->blayer->length = net->ntargets;
 
-			_append_map(&net_map, label, net, network_dt);
+			_append_map(&net_map, op_label, net, network_dt);
 			return net;
 		}
 	}

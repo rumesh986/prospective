@@ -44,6 +44,7 @@ struct block {
 	gsl_vector *tepsilon;	// used when calculating energies, without disturbing epsilon
 
 
+	size_t nenergies;
 	double **energies;
 	double *deltaw_mags;
 };
@@ -115,6 +116,7 @@ struct testdata {
 
 	size_t num_correct;
 	size_t num_samples;
+	size_t ntargets;
 
 	bool relax;
 };
@@ -129,13 +131,13 @@ void clear_block_data();
 
 struct traindata *train(struct training train, bool logging);
 void save_traindata(struct traindata *data, char *filename);
+void free_traindata(struct traindata *data);
 
-// void free_traindata(struct traindata *data);
 
 struct testdata *test(struct testing test, bool logging);
 void save_testdata(struct testdata *data, char *filename);
+void free_testdata(struct testdata *data);
 
-// void free_testdata(struct testdata *data);
 
 void trial_network();
 

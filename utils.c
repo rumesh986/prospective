@@ -123,7 +123,7 @@ void save_data(size_t label, enum dtype dtype, void *data, size_t tensor_dim, si
 				printf("PASSING alpha: dtype == %lx, data_i = %p\n", dtype_i, data + 3*i + 2);
 			}
 
-			printf("Passing data 0x%lx = %ld (%f)\n", label_i, *(size_t *)data_i, *(double *)data_i);
+			// printf("Passing data 0x%lx = %ld (%f)\n", label_i, *(size_t *)data_i, *(double *)data_i);
 			// void *data_i = ((size_t *)data + 3*i + 1);
 			// size_t data_i = *((size_t *)data + 3*i + 1);
 			// size_t write_arr[5] = {label_i, dtype_i, tensor_dim, 1, data_i};
@@ -137,7 +137,7 @@ void save_data(size_t label, enum dtype dtype, void *data, size_t tensor_dim, si
 	fwrite(header, sizeof(size_t), 4, file);
 
 	if (tensor_dim == 0) {
-		printf("writing scale 0x%lx = %ld (%f)\n", label, *(size_t *)data, *(double *)data);
+		// printf("writing scale 0x%lx = %ld (%f)\n", label, *(size_t *)data, *(double *)data);
 		fwrite(data, sizeof(size_t), 1, file);
 		return;
 	}
@@ -145,7 +145,7 @@ void save_data(size_t label, enum dtype dtype, void *data, size_t tensor_dim, si
 	// fwrite(&ndims, sizeof(size_t), 1, file);
 	fwrite(dims, sizeof(size_t), ndims, file);
 
-	printf("Writing %ld\n", label);
+	// printf("Writing %ld\n", label);
 	_recursive_tensor2file(data, tensor_dim, ndims, dims, 0, file);
 }
 
