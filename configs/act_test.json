@@ -1,0 +1,306 @@
+{
+	"general": {
+		"logging": true,
+		"database": "mnist",
+		"label": "actf_cmp"
+	},
+	"blocks": [
+		{
+			"type": "layer",
+			"layer": {
+				"label": "single32",
+				"length": 32
+			}
+		}
+	],
+	"networks": [
+		{
+			"label": "mlp_sigmoid",
+			"alpha": 0.1,
+			"activation": "sigmoid",
+			"weights": "xavier_uniform",
+			"processing": "normalized",
+			"blocks": [
+				"single32",
+				"single32"
+			],
+			"targets": [0,1,2,3,4,5,6,7,8,9]
+		},
+		{
+			"label": "mlp_relu",
+			"alpha": 0.1,
+			"activation": "relu",
+			"weights": "xavier_uniform",
+			"processing": "normalized",
+			"blocks": [
+				"single32",
+				"single32"
+			],
+			"targets": [0,1,2,3,4,5,6,7,8,9]
+		}
+	],
+	"relaxations": [
+		{
+			"label": "default_relaxation",
+			"gamma": 0.1,
+			"gamma_rate": 0.5,
+			"gamma_count": 2,
+			"energy_residual": 1e-9,
+			"max_iterations": 128
+		}
+	],
+	"operations": [
+		{
+			"type": "training",
+			"training": {
+				"label": "sigm_10000",
+				"network": "mlp_sigmoid",
+				"train_samples": 10000,
+				"seed": 0,
+				"test_samples_per_iter": 10,
+				"relaxation": "default_relaxation",
+				"save": true
+			}
+		},
+		{
+			"type": "training",
+			"training": {
+				"label": "sigm_20000",
+				"network": "mlp_sigmoid",
+				"train_samples": 20000,
+				"seed": 0,
+				"test_samples_per_iter": 10,
+				"relaxation": "default_relaxation",
+				"save": true
+			}
+		},
+		{
+			"type": "training",
+			"training": {
+				"label": "sigm_30000",
+				"network": "mlp_sigmoid",
+				"train_samples": 30000,
+				"seed": 0,
+				"test_samples_per_iter": 10,
+				"relaxation": "default_relaxation",
+				"save": true
+			}
+		},
+		{
+			"type": "training",
+			"training": {
+				"label": "sigm_40000",
+				"network": "mlp_sigmoid",
+				"train_samples": 40000,
+				"seed": 0,
+				"test_samples_per_iter": 10,
+				"relaxation": "default_relaxation",
+				"save": true
+			}
+		},
+		{
+			"type": "training",
+			"training": {
+				"label": "sigm_50000",
+				"network": "mlp_sigmoid",
+				"train_samples": 50000,
+				"seed": 0,
+				"test_samples_per_iter": 10,
+				"relaxation": "default_relaxation",
+				"save": true
+			}
+		},
+		{
+			"type": "training",
+			"training": {
+				"label": "sigm_all",
+				"network": "mlp_sigmoid",
+				"train_samples": 0,
+				"seed": 0,
+				"test_samples_per_iter": 10,
+				"relaxation": "default_relaxation",
+				"save": true
+			}
+		},
+		{
+			"type": "training",
+			"training": {
+				"label": "relu_10000",
+				"network": "mlp_relu",
+				"train_samples": 10000,
+				"seed": 0,
+				"test_samples_per_iter": 10,
+				"relaxation": "default_relaxation",
+				"save": true
+			}
+		},
+		{
+			"type": "training",
+			"training": {
+				"label": "relu_20000",
+				"network": "mlp_relu",
+				"train_samples": 20000,
+				"seed": 0,
+				"test_samples_per_iter": 10,
+				"relaxation": "default_relaxation",
+				"save": true
+			}
+		},
+		{
+			"type": "training",
+			"training": {
+				"label": "relu_30000",
+				"network": "mlp_relu",
+				"train_samples": 30000,
+				"seed": 0,
+				"test_samples_per_iter": 10,
+				"relaxation": "default_relaxation",
+				"save": true
+			}
+		},
+		{
+			"type": "training",
+			"training": {
+				"label": "relu_40000",
+				"network": "mlp_relu",
+				"train_samples": 40000,
+				"seed": 0,
+				"test_samples_per_iter": 10,
+				"relaxation": "default_relaxation",
+				"save": true
+			}
+		},
+		{
+			"type": "training",
+			"training": {
+				"label": "relu_50000",
+				"network": "mlp_relu",
+				"train_samples": 50000,
+				"seed": 0,
+				"test_samples_per_iter": 10,
+				"relaxation": "default_relaxation",
+				"save": true
+			}
+		},
+		{
+			"type": "training",
+			"training": {
+				"label": "relu_all",
+				"network": "mlp_relu",
+				"train_samples": 0,
+				"seed": 0,
+				"test_samples_per_iter": 10,
+				"relaxation": "default_relaxation",
+				"save": true
+			}
+		},
+		{
+			"type": "testing",
+			"testing": {
+				"network": "sigm_10000",
+				"num_samples": 0,
+				"relaxation": null,
+				"label": "sigm_10000"
+			}
+		},
+		{
+			"type": "testing",
+			"testing": {
+				"network": "sigm_20000",
+				"num_samples": 0,
+				"relaxation": null,
+				"label": "sigm_20000"
+			}
+		},
+		{
+			"type": "testing",
+			"testing": {
+				"network": "sigm_30000",
+				"num_samples": 0,
+				"relaxation": null,
+				"label": "sigm_30000"
+			}
+		},
+		{
+			"type": "testing",
+			"testing": {
+				"network": "sigm_40000",
+				"num_samples": 0,
+				"relaxation": null,
+				"label": "sigm_40000"
+			}
+		},
+		{
+			"type": "testing",
+			"testing": {
+				"network": "sigm_50000",
+				"num_samples": 0,
+				"relaxation": null,
+				"label": "sigm_50000"
+			}
+		},
+		{
+			"type": "testing",
+			"testing": {
+				"network": "sigm_all",
+				"num_samples": 0,
+				"relaxation": null,
+				"label": "sigm_all"
+			}
+		},
+		{
+			"type": "testing",
+			"testing": {
+				"network": "relu_10000",
+				"num_samples": 0,
+				"relaxation": null,
+				"label": "relu_10000"
+			}
+		},
+		{
+			"type": "testing",
+			"testing": {
+				"network": "relu_20000",
+				"num_samples": 0,
+				"relaxation": null,
+				"label": "relu_20000"
+			}
+		},
+		{
+			"type": "testing",
+			"testing": {
+				"network": "relu_30000",
+				"num_samples": 0,
+				"relaxation": null,
+				"label": "relu_30000"
+			}
+		},
+		{
+			"type": "testing",
+			"testing": {
+				"network": "relu_40000",
+				"num_samples": 0,
+				"relaxation": null,
+				"label": "relu_40000"
+			}
+		},
+		{
+			"type": "testing",
+			"testing": {
+				"network": "relu_50000",
+				"num_samples": 0,
+				"relaxation": null,
+				"label": "relu_50000"
+			}
+		},
+		{
+			"type": "testing",
+			"testing": {
+				"network": "relu_all",
+				"num_samples": 0,
+				"relaxation": null,
+				"label": "relu_all"
+			}
+		}
+	]
+}

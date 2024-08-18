@@ -397,10 +397,12 @@ struct network *_set_network(char *net_label, char *op_label) {
 			_set_enum(elem, "processing", &net->proc, _proc_map, proc_normalize);
 
 			cJSON *targets = cJSON_GetObjectItem(elem, "targets");
-			if (!targets || cJSON_GetArraySize(targets) == 0) {
+			if (!targets || cJSON_IsNull(targets)) {
 				printf("Targets not specified, assuming all\n");
-				net->ntargets = 0;
-				net->targets = NULL;
+				net->ntargets = 10;
+				net->targets = malloc(sizeof(size_t) * net->ntargets);
+				for (int i = 0; i < net->ntargets; i++)
+					net->targets[i] = i;
 			} else {
 				net->ntargets = cJSON_GetArraySize(targets);
 				net->targets = malloc(sizeof(size_t) * net->ntargets);

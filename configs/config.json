@@ -27,14 +27,14 @@
 		{
 			"label": "mlp_network1",
 			"alpha": 0.1,
-			"activation": "sigmoid",
+			"activation": "relu",
 			"weights": "xavier_uniform",
 			"processing": "normalized",
 			"blocks": [
 				"single32",
 				"single32"
 			],
-			"targets": [1,8]
+			"targets": null
 		},
 		{
 			"label": "cnn_network1",
@@ -82,10 +82,10 @@
 			"training": {
 				"label": "mlp_network1",
 				"network": "mlp_network1",
-				"train_samples": 1000,
+				"train_samples": 10000,
 				"seed": 0,
 				"test_samples_per_iter": 10,
-				"relaxation": "default_relaxation",
+				"relaxation": "trial_relax",
 				"save": true
 			}
 		},
@@ -97,7 +97,9 @@
 				"relaxation": null,
 				"label": "norelax"
 			}
-		},
+		}
+	],
+	"noperations": [
 		{
 			"type": "testing",
 			"testing": {

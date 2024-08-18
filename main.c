@@ -35,7 +35,7 @@ int main(int argc, char **argv) {
 	}
 
 	if (!config_read) {
-		config = parse_config("config.json");
+		config = parse_config("configs/config.json");
 		config_read = true;
 	}
 

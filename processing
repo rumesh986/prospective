@@ -36,6 +36,7 @@ SAVE_LABELS			= 0x25
 SAVE_PREDICTIONS	= 0x26
 SAVE_OUTPUTS		= 0x27
 SAVE_NUM_CORRECT	= 0x28
+SAVE_DELTAX_MAGS	= 0x29
 
 SAVE_SIZET			= 0x01
 SAVE_DOUBLET		= 0x02
@@ -154,7 +155,7 @@ class TrainData:
 		basename, _ = file.rsplit('.', 1)
 		self.plt = Plotter(net, prefix=f"Train_{basename}")
 
-		data = self.file.read_data([SAVE_TYPE, SAVE_DELTAW_MAGS, SAVE_ITER_COUNTS, SAVE_ENERGIES, SAVE_LENERGIES, SAVE_COSTS])
+		data = self.file.read_data([SAVE_TYPE, SAVE_DELTAW_MAGS, SAVE_ITER_COUNTS, SAVE_ENERGIES, SAVE_LENERGIES, SAVE_COSTS, SAVE_DELTAX_MAGS])
 
 		if data[SAVE_TYPE] != SAVE_TRAIN:
 			print("Error: Filetype does not match class")
@@ -165,6 +166,7 @@ class TrainData:
 		# self.energies = data.get(SAVE_ENERGIES)
 		self.lenergies = data.get(SAVE_LENERGIES)
 		self.train_costs = data.get(SAVE_COSTS)
+		self.deltax_mags = data.get(SAVE_DELTAX_MAGS)
 
 		if self.lenergies is not None:
 			self.energies = []
@@ -187,6 +189,9 @@ class TrainData:
 		if self.lenergies is not None:
 			self.plt.plot_energy_ratio(self.lenergies)
 			self.plt.plot_lenergies(self.lenergies)
+		
+		if self.deltax_mags is not None:
+			self.plt.plot_dx(self.deltax_mags)
 
 class TestData:
 	def __init__(self, filename, net):
@@ -275,6 +280,19 @@ class Plotter:
 		self._set_labels("Magnitude", "Training Sample")
 		self._title("Magnitude of weight change")
 		self._save("deltaw_mags")
+	
+	def plot_dx(self, dx):
+		for sample in dx:
+			count = 0
+			for layer in sample:
+				filtered = self.filter(layer)
+				plt.semilogy(filtered, c=self.colors[count])
+				count += 1
+		
+		plt.legend([f"Layer {i}" for i in range(self.net.nlayers-2)])
+		self._set_labels("Iterations", "Magnitude of neuron change")
+		self._title("Magnitude of neuron changes")
+		self._save("deltax_mags")
 	
 	def plot_iters(self, iters):
 		self.scatter(iters)
@@ -376,40 +394,40 @@ if __name__ == '__main__':
 		args.folder = f'{max(paths, key=os.path.getctime)}'
 
 	networks = [f"{args.folder}/{x}" for x in os.listdir(args.folder) if x.endswith(".net")]
-	for network in networks:
-		print(f"Processing {network}")
+	if len(networks) == 1:
+		# network = f"{args.folder}/{[x for x in os.listdir(args.folder) if x.endswith('.net')][0]}"
+		network = networks[0]
+
 		net = Network(network)
-
 		basename, _ = network.rsplit('.', 1)
+		train = TrainData(f"{basename}.traindata", net)
+		train.plot_all()
+		# print(train.lenergies)
 
-		traindata = f"{basename}.traindata"
-		testdata = f"{basename}.testdata"
+		for file in os.listdir(args.folder):
+			if file.endswith('testdata'):
+				test = TestData(f"{args.folder}/{file}", net)
+				test.plot_all()
+	else:
+		for network in networks:
+			print(f"Processing {network}")
+			net = Network(network)
 
-		print(f"traindata = {traindata}")
-		print(f"testdata = {testdata}")
-		# if traindata in os.listdir(args.folder):
-		if os.path.isfile(traindata):
-			print(f"processing {traindata}")
-			train = TrainData(traindata, net)
-			train.plot_all()
-		
-		# if testdata in os.listdir(args.folder):
-		if os.path.isfile(testdata):
-			print(f"processing {testdata}")
-			test = TestData(testdata, net)
-			test.plot_all()
-		
-	
-	exit()
+			basename, _ = network.rsplit('.', 1)
 
-	network = f"{args.folder}/{[x for x in os.listdir(args.folder) if '.' not in x][0]}"
+			traindata = f"{basename}.traindata"
+			testdata = f"{basename}.testdata"
 
-	net = Network(network)
-	train = TrainData(f"{network}.traindata", net)
-	train.plot_all()
-	# print(train.lenergies)
-
-	for file in os.listdir(args.folder):
-		if file.endswith('testdata'):
-			test = TestData(f"{args.folder}/{file}", net)
-			test.plot_all()
+			print(f"traindata = {traindata}")
+			print(f"testdata = {testdata}")
+			# if traindata in os.listdir(args.folder):
+			if os.path.isfile(traindata):
+				print(f"processing {traindata}")
+				train = TrainData(traindata, net)
+				train.plot_all()
+			
+			# if testdata in os.listdir(args.folder):
+			if os.path.isfile(testdata):
+				print(f"processing {testdata}")
+				test = TestData(testdata, net)
+				test.plot_all()

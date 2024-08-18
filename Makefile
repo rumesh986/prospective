@@ -33,7 +33,7 @@ run: build
 	./$(FILE_BASE_NAME) $(INPUT)
 
 default: build
-	./$(FILE_BASE_NAME) -c config.json -s
+	./$(FILE_BASE_NAME) -c configs/config.json -s
 	./processing
 
 trial: build

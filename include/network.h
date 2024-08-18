@@ -47,6 +47,7 @@ struct block {
 	size_t nenergies;
 	double **energies;
 	double *deltaw_mags;
+	double **deltax_mags;
 };
 
 // collection of blocks

@@ -30,6 +30,7 @@
 #define SAVE_PREDICTIONS	0x26
 #define SAVE_OUTPUTS		0x27
 #define SAVE_NUM_CORRECT	0x28
+#define SAVE_DELTAX_MAGS	0x29
 
 #define SAVE_SIZET			0x31
 #define SAVE_DOUBLET		0x32

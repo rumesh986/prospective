@@ -26,8 +26,8 @@ void _adjust_eps();
 // void _adjust_x(bool training);
 void _adjust_w_layer(struct block *ablock);
 void _adjust_w_cnn(struct block *ablock);
-void _adjust_x_layer(struct block *ablock);
-void _adjust_x_cnn(struct block *ablock);
+void _adjust_x_layer(struct block *ablock, int iter);
+void _adjust_x_cnn(struct block *ablock, int iter);
 bool _check_stop(int iter, bool reset);
 void _free_block(struct block *ablock);
 double _calc_energies(int iter);
@@ -143,6 +143,7 @@ struct traindata *train(struct training train, bool logging) {
 			if (cblock->type == block_layer) {
 				cblock->deltaw_mags = malloc(sizeof(double *) * num_samples);
 				cblock->energies = malloc(sizeof(double *) * num_samples);
+				cblock->deltax_mags = malloc(sizeof(double *) * num_samples);
 				cblock->nenergies = num_samples;
 				for (int i = 0; i < num_samples; i++)
 					cblock->energies[i] = NULL;
@@ -234,6 +235,7 @@ void save_traindata(struct traindata *data, char *filename) {
 	}
 
 	gsl_vector ***lenergies = malloc(sizeof(gsl_vector **) * data->num_samples);
+	gsl_vector ***deltax_mags = malloc(sizeof(gsl_vector **) * data->num_samples);
 	// gsl_vector_view **delta_w_mags = malloc(sizeof(gsl_vector_view) * _net.nlayers-1);
 	// gsl_vector *lenergies[data->num_samples][_net.nlayers-1];
 	gsl_vector *delta_w_mags[_net.nlayers-1];
@@ -244,7 +246,9 @@ void save_traindata(struct traindata *data, char *filename) {
 	gsl_vector_view train_costs = gsl_vector_view_array(data->train_costs, data->num_samples);
 
 	gsl_vector_view views[data->num_samples * (_net.nlayers-1)];
+	gsl_vector_view deltax_views[data->num_samples * (_net.nlayers-2)];
 	int view_counter = 0;
+	int deltax_view_counter = 0;
 
 	struct block *cblock;
 	int l = 0;
@@ -261,6 +265,7 @@ void save_traindata(struct traindata *data, char *filename) {
 
 	for (int i = 0; i < data->num_samples; i++) {
 		lenergies[i] = malloc(sizeof(gsl_vector *) * (_net.nlayers-1));
+		deltax_mags[i] = malloc(sizeof(gsl_vector *) * (_net.nlayers-2));
 		l = 0;
 		PLOOP(_net, cblock) {
 			views[view_counter] = gsl_vector_view_array(cblock->energies[i], data->iter_counts[i]);
@@ -270,6 +275,14 @@ void save_traindata(struct traindata *data, char *filename) {
 			// print_vec(lenergies[i][l], vectitle, false);
 			// printf("compiling lenergies i = %d, l = %d, p = %p\n", i, l, lenergies[i][l]);
 			view_counter++;
+			l++;
+		}
+
+		l = 0;
+		HLOOP(_net, cblock) {
+			deltax_views[deltax_view_counter] = gsl_vector_view_array(cblock->deltax_mags[i], data->iter_counts[i]);
+			deltax_mags[i][l] = &deltax_views[deltax_view_counter].vector;
+			deltax_view_counter++;
 			l++;
 		}
 	}
@@ -285,6 +298,7 @@ void save_traindata(struct traindata *data, char *filename) {
 	save_data(SAVE_ITER_COUNTS, double_dt, &iter_counts.vector, 1, 1, PS(1), file);
 	save_data(SAVE_LENERGIES, double_dt, lenergies, 1, 2, (size_t[]){data->num_samples, _net.nlayers-1}, file);
 	save_data(SAVE_COSTS, double_dt, &train_costs.vector, 1, 1, PS(1), file);
+	save_data(SAVE_DELTAX_MAGS, double_dt, deltax_mags, 1, 2, (size_t[]){data->num_samples, _net.nlayers-2}, file);
 
 	fclose(file);
 
@@ -576,8 +590,8 @@ int _relaxation(bool training) {
 		// adjust x
 		HLOOP(_net, cblock) {
 			switch (cblock->type) {
-				case block_layer:	_adjust_x_layer(cblock);	break;
-				case block_cnn:		_adjust_x_cnn(cblock);		break;
+				case block_layer:	_adjust_x_layer(cblock, iter);	break;
+				case block_cnn:		_adjust_x_cnn(cblock, iter);		break;
 			}
 		}
 
@@ -600,6 +614,16 @@ int _relaxation(bool training) {
 				} else {
 					printf("[Error] Failed to realloc lenergy data, expect errors\n");
 					// stop = true;
+					break;
+				}
+			}
+
+			HLOOP(_net, cblock) {
+				double *new_ptr = realloc(cblock->deltax_mags[_sample_i], sizeof(double) * _net.lenergy_chunks * CHUNK_SIZE);
+				if (new_ptr) {
+					cblock->deltax_mags[_sample_i] = new_ptr;
+				} else {
+					printf("[Error] Failed to realloc deltax mags data, expect errors\n");
 					break;
 				}
 			}
@@ -693,7 +717,7 @@ void _prop_layer(struct block *ablock, bool temp_input, bool temp_output) {
 // 	}
 // }
 
-void _adjust_x_layer(struct block *ablock) {
+void _adjust_x_layer(struct block *ablock, int iter) {
 	struct block_layer *layer = ablock->blayer;
 	
 	activation_deriv_inplace(ablock->layer, ablock->tlayer, _net.act);
@@ -702,9 +726,13 @@ void _adjust_x_layer(struct block *ablock) {
 
 	gsl_blas_daxpy(-_relax.gamma, ablock->epsilon, ablock->deltax);
 	gsl_vector_add(ablock->layer, ablock->deltax);
+
+	if (iter > 0 && _logging) {
+		ablock->deltax_mags[_sample_i][iter-1] = gsl_blas_dnrm2(ablock->deltax);
+	}
 }
 
-void _adjust_x_cnn(struct block *ablock) {
+void _adjust_x_cnn(struct block *ablock, int iter) {
 
 }
 
