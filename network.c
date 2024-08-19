@@ -23,12 +23,10 @@ static bool _logging = false;
 void _prop_layer(struct block *ablock, bool temp_input, bool temp_output);
 int _relaxation(bool training);
 void _adjust_eps();
-// void _adjust_x(bool training);
 void _adjust_w_layer(struct block *ablock);
 void _adjust_w_cnn(struct block *ablock);
 void _adjust_x_layer(struct block *ablock, int iter);
 void _adjust_x_cnn(struct block *ablock, int iter);
-bool _check_stop(int iter, bool reset);
 void _free_block(struct block *ablock);
 double _calc_energies(int iter);
 
@@ -41,14 +39,12 @@ void init_network(struct network *net) {
 	net->head->blayer->length = db_get_input_length();
 
 	net->nlayers = 0;
-	// for (struct block *cur_block = net.head; cur_block; cur_block=cur_block->next) {
 	for (struct block *cur_block = net->head; cur_block; cur_block=cur_block->next) {
 		size_t layer_size = 0;
 		if (cur_block->type == block_layer) {
 			struct block_layer *layer = cur_block->blayer;
 
 			layer_size = layer->length;
-			
 
 			if (cur_block->next && cur_block->next->type == block_layer) {
 				cur_block->weights = gsl_matrix_calloc(cur_block->next->blayer->length, layer->length);
@@ -170,7 +166,6 @@ struct traindata *train(struct training train, bool logging) {
 		gsl_vector_set_basis(_net.tail->layer, cur_target);
 	
 		int iters = _relaxation(true);
-		// _adjust_w();
 		
 		// update weights
 		struct block *cblock;
@@ -236,11 +231,7 @@ void save_traindata(struct traindata *data, char *filename) {
 
 	gsl_vector ***lenergies = malloc(sizeof(gsl_vector **) * data->num_samples);
 	gsl_vector ***deltax_mags = malloc(sizeof(gsl_vector **) * data->num_samples);
-	// gsl_vector_view **delta_w_mags = malloc(sizeof(gsl_vector_view) * _net.nlayers-1);
-	// gsl_vector *lenergies[data->num_samples][_net.nlayers-1];
 	gsl_vector *delta_w_mags[_net.nlayers-1];
-	// gsl_vector *iter_counts = gsl_vector_calloc(data->num_samples);
-	// gsl_vector *train_costs = gsl_vector_calloc(data->num_samples);
 
 	gsl_vector_view iter_counts = gsl_vector_view_array(data->iter_counts, data->num_samples);
 	gsl_vector_view train_costs = gsl_vector_view_array(data->train_costs, data->num_samples);
@@ -256,7 +247,6 @@ void save_traindata(struct traindata *data, char *filename) {
 		views[view_counter] = gsl_vector_view_array(cblock->deltaw_mags, data->num_samples);
 		delta_w_mags[l] = &views[view_counter].vector;
 		
-		// print_vec(delta_w_mags[l], "deltawmags", false);
 		l++;
 		view_counter++;
 	}
@@ -270,10 +260,6 @@ void save_traindata(struct traindata *data, char *filename) {
 		PLOOP(_net, cblock) {
 			views[view_counter] = gsl_vector_view_array(cblock->energies[i], data->iter_counts[i]);
 			lenergies[i][l] = &views[view_counter].vector;
-			// char vectitle[32];
-			// sprintf(vectitle, "i=%d,l=%d,L=%ld", i, l, lenergies[i][l]->size);
-			// print_vec(lenergies[i][l], vectitle, false);
-			// printf("compiling lenergies i = %d, l = %d, p = %p\n", i, l, lenergies[i][l]);
 			view_counter++;
 			l++;
 		}
@@ -414,9 +400,6 @@ struct testdata *test(struct testing test, bool logging) {
 				struct block *cblock;
 				PLOOP2(_net, cblock)
 					_prop_layer(cblock, false, false);
-					// gsl_vector_memcpy(cblock->next->layer, cblock->out);
-					
-				// gsl_vector_memcpy(_net.tail->layer, _net.tail->prev->out);
 			}
 
 			int prediction_index = gsl_vector_max_index(_net.tail->layer);
@@ -516,8 +499,6 @@ void save_testdata(struct testdata *data, char *filename) {
 
 	if (data->relax) {
 		for (int i = 0; i < data->num_samples; i++) {
-			// for (int l = 0; l < _net.nlayers-1; l++)
-				// gsl_vector_free(lenergies[i][l]);
 			free(lenergies[i]);
 		}
 		free(lenergies);
@@ -577,7 +558,6 @@ int _relaxation(bool training) {
 	// check stop condition every iteration
 	int iter = 0;
 	bool stop = false;
-	// bool reset = true;
 	struct block *cblock;
 	do {
 		// calculate epsilon
@@ -591,7 +571,7 @@ int _relaxation(bool training) {
 		HLOOP(_net, cblock) {
 			switch (cblock->type) {
 				case block_layer:	_adjust_x_layer(cblock, iter);	break;
-				case block_cnn:		_adjust_x_cnn(cblock, iter);		break;
+				case block_cnn:		_adjust_x_cnn(cblock, iter);	break;
 			}
 		}
 
@@ -601,7 +581,6 @@ int _relaxation(bool training) {
 		// check stop
 		if (_relax.max_iters && iter > _relax.max_iters)
 			break;
-			// stop = true;
 
 		if (_logging && (iter + 1) >= (_net.lenergy_chunks * CHUNK_SIZE)) {
 			_net.lenergy_chunks++;
@@ -613,7 +592,6 @@ int _relaxation(bool training) {
 					cblock->energies[_sample_i] = new_ptr;
 				} else {
 					printf("[Error] Failed to realloc lenergy data, expect errors\n");
-					// stop = true;
 					break;
 				}
 			}
@@ -647,26 +625,17 @@ int _relaxation(bool training) {
 					gamma *= _relax.gamma_rate;
 					gamma_count--;
 					printf("Energy increasing, reducing gamma to %f\n", gamma);
-					// stop = false;
 					continue;
 				}
 
 			}
-			// stop = true;
 			break;
 		}
 		
 		prev_energy = energy;
 
-		// _adjust_eps();
-		// _adjust_x(training);
-		// stop = _check_stop(iter, reset);
 		iter++;
-		// reset = false;
 	} while(!stop);
-
-	// if (training)
-	// 	_trainresults->iter_counts[_sample_i] = iter;
 
 	// printf("[%5d] Relaxation complete after %d iterations\n", _sample_i, iter);
 	return iter;
@@ -690,33 +659,6 @@ void _prop_layer(struct block *ablock, bool temp_input, bool temp_output) {
 	}
 }
 
-// void _adjust_eps_layer(struct block *ablock) {
-// 	gsl_vector_memcpy(ablock->epsilon, ablock->layer);
-// 	_prop_layer(ablock->prev);
-// 	gsl_vector_sub(ablock->epsilon, ablock->prev->out);
-// }
-
-// void _adjust_eps_cnn(struct block *ablock) {
-// 	struct block_cnn *cnn = ablock->cnn;
-// 	gsl_vector_memcpy(cnn->epsilon, cnn->layer);
-// 	_prop_layer(ablock->prev);
-// 	gsl_vector_sub(cnn->epsilon, ablock->prev);
-// }
-
-// void _adjust_eps() {
-// 	struct block *cblock;
-// 	PLOOP(_net, cblock) {
-// 		gsl_vector_memcpy(cblock->epsilon, cblock->layer);
-// 		_prop_layer(cblock->prev, false, true);
-// 		gsl_vector_sub(cblock->epsilon, cblock->tlayer);
-
-// 		// switch (cblock->type) {
-// 		// 	case block_layer:	_adjust_eps_layer(cblock);	break;
-// 		// 	case block_cnn: 	_adjust_eps_cnn(cblock);	break;
-// 		// }
-// 	}
-// }
-
 void _adjust_x_layer(struct block *ablock, int iter) {
 	struct block_layer *layer = ablock->blayer;
 	
@@ -736,20 +678,6 @@ void _adjust_x_cnn(struct block *ablock, int iter) {
 
 }
 
-// void _adjust_x(bool training) {
-// 	struct block *cblock;
-// 	// for (struct block *cblock = _net.head->next; training ? cblock->next : cblock; cblock=cblock->next) {
-// 	HLOOP(_net, cblock) {
-// 		switch (cblock->type) {
-// 			case block_layer:	_adjust_x_layer(cblock);	break;
-// 			case block_cnn:		_adjust_x_cnn(cblock);		break;
-// 		}
-// 	}
-
-// 	if (!training)
-// 		gsl_blas_daxpy(-_relax.gamma, _net.tail->epsilon, _net.tail->layer);
-// }
-
 void _adjust_w_layer(struct block *ablock) {
 	activation_inplace(ablock->layer, ablock->tlayer, _net.act);
 
@@ -765,10 +693,6 @@ void _adjust_w_layer(struct block *ablock) {
 void _adjust_w_cnn(struct block *ablock) {
 
 }
-
-// void _adjust_w() {
-
-// }
 
 double _calc_energies(int iter) {
 	double ret = 0.0;
@@ -807,71 +731,6 @@ void _print_lenergies(int iter) {
 	}
 	printf("\n");
 }
-
-// bool _check_stop(int iter, bool reset) {
-// 	if (_relax.max_iters && iter > _relax.max_iters)
-// 		return true;
-	
-// 	if (_logging && (iter + 1) >= (_net.lenergy_chunks * CHUNK_SIZE)) {
-// 		_net.lenergy_chunks++;
-
-// 		struct block *cblock;
-// 		PLOOP(_net, cblock) {
-// 			double *new_ptr = realloc(cblock->energies[_sample_i], sizeof(double) * _net.lenergy_chunks * CHUNK_SIZE);
-// 			if (new_ptr) {
-// 				cblock->energies[_sample_i] = new_ptr;
-// 			} else {
-// 				printf("[Error] Failed to realloc lenergy data, expect errors\n");
-// 				return true;
-// 			}
-// 		}
-// 	}
-	
-// 	static double prev_energy = 1e30;
-// 	static size_t gamma_count = 0;
-// 	static double gamma = 0.1;
-
-// 	if (reset) {
-// 		prev_energy = 1000000000000000000000000000000.0;
-// 		gamma_count = _relax.gamma_count;
-// 		gamma = _relax.gamma;
-// 		return false;
-// 	}
-
-// 	double energy = _calc_energies(iter);
-// 	_print_lenergies(iter);
-// 	double res = prev_energy - energy;
-
-// 	if (energy > 1e30) {
-// 		printf("WTF thats massive %d:  %e\n", iter, energy);
-// 		exit(100);
-// 	}
-
-// 	// energy does crazy high (>1e30) if printf is commented out
-// 	// absolutely no clue why
-// 	// printf(" ");
-// 	// printf("[%3d] energy: %e, res = %e\n", iter, energy, res);
-// 	if (_relax.energy_res &&  res < _relax.energy_res) {
-// 		if (res < 0) {
-// 			printf("prev: %.60f\n", prev_energy);
-// 			printf("curr: %.60f\n", energy);
-// 			// _print_lenergies(_net, iter-1);
-// 			// _print_lenergies(_net, iter);
-
-// 			if (gamma_count > 0) {
-// 				gamma *= _relax.gamma_rate;
-// 				gamma_count--;
-// 				printf("Energy increasing, reducing gamma to %f\n", gamma);
-// 				return false;
-// 			}
-
-// 		}
-// 		return true;
-
-// 	}
-	
-// 	prev_energy = energy;
-// }
 
 void _free_block(struct block *ablock) {
 	gsl_vector_free(ablock->layer);

@@ -32,18 +32,16 @@ struct block {
 	gsl_vector *layer;
 	gsl_vector *epsilon;
 
-	// gsl_vector *act;	// used to calculate activated versions or derivative of activation versions
-	// gsl_vector *out;
-
 	gsl_matrix *weights;
 
 	gsl_vector *deltax;
 	gsl_matrix *deltaw;
 
+	// temp vectors, used to avoid corrupting main vectors
 	gsl_vector *tlayer;
-	gsl_vector *tepsilon;	// used when calculating energies, without disturbing epsilon
+	gsl_vector *tepsilon;
 
-
+	// data to be collected
 	size_t nenergies;
 	double **energies;
 	double *deltaw_mags;
@@ -58,13 +56,13 @@ struct network {
 	enum db_proc proc;
 
 	struct block *head; // points to input layer, initial value is 0, real value set in init_network
-	struct block *tail; // points to output layer, initial value is 0, real value set in init_network
+	struct block *tail; // points to output layer, set to number of targets
 
 	size_t nlayers;
 	size_t ntargets;
 	size_t *targets;
 
-	size_t lenergy_chunks;
+	size_t lenergy_chunks; // used for managing memory for data collection in child blocks
 
 	bool save;
 };
@@ -78,6 +76,7 @@ struct block_cnn {
 	size_t stride;
 	size_t padding;
 
+	size_t image_size;
 	size_t length;
 	gsl_matrix_view layer_mat;
 };
@@ -99,7 +98,6 @@ struct testing {
 	size_t num_samples;
 };
 
-// back to old stuff
 struct traindata {
 	double *iter_counts;
 	double *train_costs;
@@ -128,18 +126,15 @@ void save_network(char *filename);
 void free_network(struct network *net);
 void clear_block_data();
 
-// struct net_params *load_network(char *filename);
-
 struct traindata *train(struct training train, bool logging);
 void save_traindata(struct traindata *data, char *filename);
 void free_traindata(struct traindata *data);
-
 
 struct testdata *test(struct testing test, bool logging);
 void save_testdata(struct testdata *data, char *filename);
 void free_testdata(struct testdata *data);
 
-
 void trial_network();
+// struct net_params *load_network(char *filename);
 
 #endif

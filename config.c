@@ -112,7 +112,6 @@ struct config parse_config(char *filename) {
 	cJSON_ArrayForEach(elem, operations) {
 		cJSON *type = cJSON_GetObjectItem(elem, "type");
 
-
 		if (CMP_VAL(type, "training")) {
 			cJSON *op = cJSON_GetObjectItem(elem, "training");
 			cJSON *label = cJSON_GetObjectItem(op, "label");

@@ -395,14 +395,12 @@ if __name__ == '__main__':
 
 	networks = [f"{args.folder}/{x}" for x in os.listdir(args.folder) if x.endswith(".net")]
 	if len(networks) == 1:
-		# network = f"{args.folder}/{[x for x in os.listdir(args.folder) if x.endswith('.net')][0]}"
 		network = networks[0]
 
 		net = Network(network)
 		basename, _ = network.rsplit('.', 1)
 		train = TrainData(f"{basename}.traindata", net)
 		train.plot_all()
-		# print(train.lenergies)
 
 		for file in os.listdir(args.folder):
 			if file.endswith('testdata'):
@@ -420,13 +418,11 @@ if __name__ == '__main__':
 
 			print(f"traindata = {traindata}")
 			print(f"testdata = {testdata}")
-			# if traindata in os.listdir(args.folder):
 			if os.path.isfile(traindata):
 				print(f"processing {traindata}")
 				train = TrainData(traindata, net)
 				train.plot_all()
 			
-			# if testdata in os.listdir(args.folder):
 			if os.path.isfile(testdata):
 				print(f"processing {testdata}")
 				test = TestData(testdata, net)

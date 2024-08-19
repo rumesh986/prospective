@@ -5,8 +5,6 @@
 
 #include <getopt.h>
 
-// #include <gsl/gsl_matrix.h>
-
 #include "include/all.h"
 #include "include/config.h"
 
@@ -44,8 +42,6 @@ int main(int argc, char **argv) {
 		exit(0);
 	}
 
-	// print_config(config);
-
 	char results_dir[256];
 	time_t cur_time = time(NULL);
 	struct tm *cur_tm = localtime(&cur_time);
@@ -77,13 +73,6 @@ int main(int argc, char **argv) {
 			sprintf(trainfile, "%s/%s.traindata", results_dir, config.operations[i].label);
 			save_traindata(train_data, trainfile);
 			free_traindata(train_data);
-			// clear_block_data();
-			// struct traindata *traindata = train(config.networks[i], true);
-			// save_traindata(config.networks[i]);
-			// build network
-			// train
-			// save network
-			// save results 
 
 		} else if (config.operations[i].type == op_testing) {
 			set_network(config.operations[i].testing.net);
@@ -93,8 +82,6 @@ int main(int argc, char **argv) {
 
 			save_testdata(test_data, testfile);
 			free_testdata(test_data);
-			// test
-			// save results
 		}
 
 	}
