@@ -267,15 +267,15 @@ class Plotter:
 		plt.ylabel(ylabel)
 	
 	def filter(self, y):
-		return [x for x in y if x != 0]
+		return [x for x in y if x > 1e-60]
 
 	def plot_dw(self, dw):
+		plt.yscale('log')
 		i = 0
 		for layer in dw:
 			self.scatter(layer, label=f"Layer {i}")
 			i += 1
 
-		plt.yscale('log')
 		plt.legend(loc='upper right')
 		self._set_labels("Magnitude", "Training Sample")
 		self._title("Magnitude of weight change")
@@ -377,6 +377,7 @@ class Plotter:
 			target, = np.where(targets == labels[i])[0]
 			plt.scatter(np.arange(len(targets)), outputs[i], c=self.colors[target % len(targets)])
 		
+		# print(outputs)
 		plt.legend([f"{targets[i]}" for i in range(len(targets))])
 
 		self._set_labels("Neuron", "Neuron activation")

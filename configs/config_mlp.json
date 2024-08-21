@@ -3,7 +3,7 @@
 		"logging": true,
 		"database": "mnist",
 		"label": "trial",
-		"results_dir": "tests/lenet"
+		"results_dir": null
 	},
 	"blocks": [
 		{
@@ -54,34 +54,6 @@
 					"size": 2
 				}
 			}
-		},
-		{
-			"type": "cnn",
-			"cnn": {
-				"label": "cnn_k5_s1_p2_c6",
-				"kernel_size": 5,
-				"stride": 1,
-				"padding": 2,
-				"nchannels": 6,
-				"pool": {
-					"type": "max",
-					"size": 2
-				}
-			}
-		},
-		{
-			"type": "cnn",
-			"cnn": {
-				"label": "cnn_k5_s1_p0_c16",
-				"kernel_size": 5,
-				"stride": 1,
-				"padding": 0,
-				"nchannels": 4,
-				"pool": {
-					"type": "max",
-					"size": 2
-				}
-			}
 		}
 	],
 	"networks": [
@@ -99,8 +71,8 @@
 		},
 		{
 			"label": "cnn_network1",
-			"alpha": 0.1,
-			"activation": "relu",
+			"alpha": 0.3,
+			"activation": "sigmoid",
 			"weights": "xavier_uniform",
 			"processing": "normalized",
 			"blocks": [
@@ -110,26 +82,12 @@
 				"layer_84"
 			],
 			"targets": [1,8]
-		},
-		{
-			"label": "lenet1",
-			"alpha": 0.1,
-			"activation": "relu",
-			"weights": "xavier_uniform",
-			"processing": "normalized",
-			"blocks": [
-				"cnn_k5_s1_p2_c6",
-				"cnn_k5_s1_p0_c16",
-				"layer_120",
-				"layer_84"
-			],
-			"targets": [1,8]
 		}
 	],
 	"relaxations": [
 		{
 			"label": "working_relaxation",
-			"gamma": 0.5,
+			"gamma": 0.1,
 			"gamma_rate": 0.5,
 			"gamma_count": 2,
 			"energy_residual": 1e-18,
@@ -137,7 +95,7 @@
 		},
 		{
 			"label": "default_relaxation",
-			"gamma": 0.1,
+			"gamma": 0.07,
 			"gamma_rate": 0.5,
 			"gamma_count": 2,
 			"energy_residual": 1e-9,
@@ -156,20 +114,20 @@
 		{
 			"type": "training",
 			"training": {
-				"label": "lenet1",
-				"network": "lenet1",
+				"label": "mlp_network1",
+				"network": "mlp_network1",
 				"train_samples": 1000,
 				"seed": 0,
 				"test_samples_per_iter": 10,
-				"relaxation": "default_relaxation",
+				"relaxation": "working_relaxation",
 				"save": true
 			}
 		},
 		{
 			"type": "testing",
 			"testing": {
-				"network": "lenet1",
-				"num_samples": 10,
+				"network": "mlp_network1",
+				"num_samples": 1000,
 				"relaxation": null,
 				"label": "norelax"
 			}
@@ -181,7 +139,7 @@
 			"training": {
 				"label": "mlp_network1",
 				"network": "mlp_network1",
-				"train_samples": 10,
+				"train_samples": 1000,
 				"seed": 0,
 				"test_samples_per_iter": 10,
 				"relaxation": "trial_relax",

@@ -14,6 +14,8 @@
 		"type_traits": "c",
 		"utility": "c",
 		"config.h": "c",
-		"vector": "c"
+		"vector": "c",
+		"signal.h": "c",
+		"random": "c"
 	}
 }

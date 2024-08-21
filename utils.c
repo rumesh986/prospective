@@ -43,6 +43,24 @@ void print_img(gsl_vector *vec, char *title) {
 	}
 }
 
+void print_mat(gsl_matrix *mat, char *title, bool print_index) {
+	printf("########### %s ###########\n", title);
+	if (print_index) {
+		printf("    ");
+		for (int j = 0; j < mat->size2; j++)
+			printf(" [%3d] ", j);
+		printf("\n");
+	}
+	for (int i = 0; i< mat->size1; i++) {
+		if (print_index)
+			printf("[%3d] |", i);
+		for (int j = 0; j < mat->size2; j++) 
+			printf(" %.1f ", gsl_matrix_get(mat, i, j));
+		printf("|\n");
+	}
+}
+
+
 gsl_vector *vec_ops(gsl_vector *inp, double(*op)(double)) {
 	gsl_vector *ret = gsl_vector_calloc(inp->size);
 	for (int i = 0; i < inp->size; i++)
@@ -80,7 +98,10 @@ double mat_dot(gsl_matrix *A, gsl_matrix *B) {
 
 	gsl_vector_view temp_vec = gsl_vector_view_array(temp->data, A->size1 * A->size2);
 
-	return gsl_vector_sum(&temp_vec.vector);
+	double ret = gsl_vector_sum(&temp_vec.vector);
+	gsl_matrix_free(temp);
+
+	return ret;
 }
 
 void vec2file(gsl_vector *vec, FILE *file) {

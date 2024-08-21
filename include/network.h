@@ -17,35 +17,9 @@ enum block_t {
 	block_cnn
 };
 
-// abstract block contains pointer to a specific block and its type
-struct block {
-	enum block_t type;
-
-	union {
-		struct block_layer *blayer;
-		struct block_cnn *cnn;
-	};
-
-	struct block *prev;
-	struct block *next;
-
-	gsl_vector *layer;
-	gsl_vector *epsilon;
-
-	gsl_matrix *weights;
-
-	gsl_vector *deltax;
-	gsl_matrix *deltaw;
-
-	// temp vectors, used to avoid corrupting main vectors
-	gsl_vector *tlayer;
-	gsl_vector *tepsilon;
-
-	// data to be collected
-	size_t nenergies;
-	double **energies;
-	double *deltaw_mags;
-	double **deltax_mags;
+enum pool_t {
+	pool_max,
+	pool_avg
 };
 
 // collection of blocks
@@ -67,18 +41,63 @@ struct network {
 	bool save;
 };
 
-struct block_layer {
+// abstract block contains pointer to a specific block and its type
+struct block {
+	enum block_t type;
+
+	union {
+		struct block_layer *blayer;
+		struct block_cnn *cnn;
+	};
+
+	struct block *prev;
+	struct block *next;
+
 	size_t length;
+
+	gsl_vector *layer;
+	gsl_vector *epsilon;
+	gsl_vector *deltax;
+
+	gsl_matrix *weights;
+	gsl_matrix *deltaw;
+
+	// temp vectors, used to avoid corrupting main vectors
+	gsl_vector *tlayer;
+	gsl_vector *tepsilon;
+
+	// data to be collected
+	size_t nenergies;
+	double **energies;
+	double *deltaw_mags;
+	double **deltax_mags;
 };
+
+struct block_layer {};
 
 struct block_cnn {
 	size_t kernel_size;
 	size_t stride;
 	size_t padding;
 
+	size_t nchannels;
+	size_t nmats;
+	
+	size_t pool_size;
+	enum pool_t pool_type;
+	gsl_vector *pool_indices; // holds location of max index if needed
+
 	size_t image_size;
-	size_t length;
-	gsl_matrix_view layer_mat;
+	size_t image_length;
+	
+	size_t conv_size;
+	size_t conv_length;
+	gsl_vector *conv_layer;
+	gsl_matrix **padded_input;
+
+	gsl_matrix **dAdxP;
+	gsl_matrix *dAdx;
+	gsl_matrix **dAdw;
 };
 
 struct training {

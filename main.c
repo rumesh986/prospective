@@ -29,6 +29,7 @@ int main(int argc, char **argv) {
 				break;
 			case 't':
 				trial();
+				exit(0);
 		}
 	}
 

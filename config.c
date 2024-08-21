@@ -47,6 +47,12 @@ struct _map _weights_map = {4, (struct _map_pair[]) {
 	{"xavier_uniform", PI(weights_xavier_uniform), int_dt}
 }};
 
+struct _map _poolt_map = {3, (struct _map_pair[]) {
+	{"max", PI(pool_max), int_dt},
+	{"average", PI(pool_avg), int_dt},
+	{"avg", PI(pool_avg), int_dt}
+}};
+
 struct _map net_map = {0, NULL};
 
 cJSON *_config_json;
@@ -224,8 +230,8 @@ void save_config(char *filename) {
 		cJSON_ArrayForEach(elem, networks) {
 			if (CMP_VAL(cJSON_GetObjectItem(elem, "label"), net_map.data[i].key)) {
 				struct network *net = (struct network *) net_map.data[i].value;
-				cJSON_AddNumberToObject(elem, "input_length", net->head->blayer->length);
-				cJSON_AddNumberToObject(elem, "output_length", net->tail->blayer->length);
+				cJSON_AddNumberToObject(elem, "input_length", net->head->length);
+				cJSON_AddNumberToObject(elem, "output_length", net->tail->length);
 			}
 		}
 	}
@@ -412,7 +418,7 @@ struct network *_set_network(char *net_label, char *op_label) {
 			net->head = malloc(sizeof(struct block));
 			net->head->type = block_layer;
 			net->head->blayer = malloc(sizeof(struct block_layer));
-			net->head->blayer->length = 0; // initial value, will be updated in init_network later on
+			net->head->length = 0; // initial value, will be updated in init_network later on
 			net->head->prev = NULL;
 			net->head->next = NULL;
 
@@ -437,7 +443,7 @@ struct network *_set_network(char *net_label, char *op_label) {
 
 			net->tail->type = block_layer;
 			net->tail->blayer = malloc(sizeof(struct block_layer));
-			net->tail->blayer->length = net->ntargets;
+			net->tail->length = net->ntargets;
 
 			_append_map(&net_map, op_label, net, network_dt);
 			return net;
@@ -456,7 +462,7 @@ struct block *_get_block(char *label) {
 			if (CMP_VAL(cJSON_GetObjectItem(layer, "label"), label)) {
 				ret->type = block_layer;
 				ret->blayer = malloc(sizeof(struct block_layer));
-				_set_val(layer, "length", &ret->blayer->length, PS(0), size_dt);
+				_set_val(layer, "length", &ret->length, PS(0), size_dt);
 
 				ret->prev = NULL;
 				ret->next = NULL;
@@ -470,10 +476,25 @@ struct block *_get_block(char *label) {
 				_set_val(cnn, "kernel_size", &ret->cnn->kernel_size, PS(3), size_dt);
 				_set_val(cnn, "stride", &ret->cnn->stride, PS(1), size_dt);
 				_set_val(cnn, "padding", &ret->cnn->padding, PS(0), size_dt);
+				_set_val(cnn, "nchannels", &ret->cnn->nchannels, PS(1), size_dt);
+				
+				cJSON *pool_cfg = cJSON_GetObjectItem(cnn, "pool");
+				if (pool_cfg) {
+					_set_val(pool_cfg, "size", &ret->cnn->pool_size, PS(2), size_dt);
+					_set_enum(pool_cfg, "type", &ret->cnn->pool_type, _poolt_map, pool_max);
+				} else {
+					printf("CNN pool information, assuming max pooling of size 2\n");
+					ret->cnn->pool_size = 2;
+					ret->cnn->pool_type = pool_max;
+				}
+
 				return ret;
 			}
 		}
 	}
+
+	printf("block %s not found, check config file\n", label);
+	exit(ERR_INVALID_CONFIG);
 }
 
 void _print_relaxation(struct relaxation_params relax, char *level) {
@@ -529,7 +550,7 @@ void _print_network(struct network net, char *level) {
 
 		if (block->type == block_layer) {
 			printf("Layer\n");
-			printf("%s\tLength: %ld\n", level, block->blayer->length);
+			printf("%s\tLength: %ld\n", level, block->length);
 		} else if (block->type == block_cnn) {
 			printf("CNN\n");
 			printf("%s\tkernel size: %ld\n", level, block->cnn->kernel_size);
