@@ -100,6 +100,12 @@ struct block_cnn {
 	gsl_matrix **dAdw;
 };
 
+struct amg {
+	struct network **nets;
+	size_t depth;
+	// gsl_vector *
+};
+
 struct training {
 	struct relaxation_params relax;
 	struct network *net;
@@ -107,6 +113,8 @@ struct training {
 	size_t num_samples;
 	size_t seed;
 	size_t test_samples_per_iters;
+
+	struct amg amg;
 };
 
 struct testing {

@@ -143,6 +143,15 @@ struct config parse_config(char *filename) {
 			_set_val(op, "seed", &train->seed, PS(0), size_dt);
 			_set_val(op, "test_samples_per_iter", &train->test_samples_per_iters, PS(0), size_dt);
 
+			cJSON *amg = cJSON_GetObjectItem(op, "multigrid");
+			if (amg) {
+				_set_val(amg, "depth", &train->amg.depth, PS(1), size_dt);
+			} else {
+				train->amg.depth = 1;
+			}
+
+			train->amg.nets = train->amg.depth > 1 ? malloc(sizeof(struct network *) * train->amg.depth) : NULL;
+
 		} else if (CMP_VAL(type, "testing")) {
 			cJSON *op = cJSON_GetObjectItem(elem, "testing");
 			cJSON *label = cJSON_GetObjectItem(op, "label");
@@ -272,8 +281,15 @@ void free_config() {
 	free(_config.label);
 	free(_config.results_dir);
 	
-	for (int i = 0; i < _config.num_operations; i++)
+	for (int i = 0; i < _config.num_operations; i++) {
 		free(_config.operations[i].label);
+
+		if (_config.operations[i].type == op_training && _config.operations->training.amg.depth > 1) {
+			for (int j = 0; j < _config.operations[i].training.amg.depth; j++)
+				free_network(_config.operations[i].training.amg.nets[j]);
+			free(_config.operations[i].training.amg.nets);
+		}
+	}
 
 	free(_config.operations);
 

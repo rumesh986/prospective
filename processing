@@ -387,12 +387,20 @@ class Plotter:
 if __name__ == '__main__':
 	parser = argparse.ArgumentParser()
 	parser.add_argument('-f', '--folder')
+	parser.add_argument('-t', '--test')
 	args = parser.parse_args()
 
+	search_folder = 'results'
+
+	if args.test:
+		search_folder = f"tests/{args.test}"
+
 	if not args.folder:
-		folders = os.listdir('results')
-		paths = [os.path.join('results', basename) for basename in folders]
+		folders = os.listdir(search_folder)
+		paths = [os.path.join(search_folder, basename) for basename in folders]
 		args.folder = f'{max(paths, key=os.path.getctime)}'
+
+	print(f"Processing contents of {args.folder}")
 
 	networks = [f"{args.folder}/{x}" for x in os.listdir(args.folder) if x.endswith(".net")]
 	if len(networks) == 1:
