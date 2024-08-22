@@ -3,7 +3,8 @@
 
 enum op_type {
 	op_training,
-	op_testing
+	op_testing,
+	op_load
 };
 
 struct operation {
@@ -12,6 +13,7 @@ struct operation {
 	union {
 		struct training training;
 		struct testing testing;
+		struct load load;
 	};
 
 	char *label;

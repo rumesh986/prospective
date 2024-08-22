@@ -15,13 +15,13 @@ C_FILES = $(addsuffix .c, $(FILES))
 H_FILES = $(addprefix ./include/, $(addsuffix .h, $(FILES))))
 
 %.o: %.c
-	$(CC) -c $< -o $@ -g -Og
+	$(CC) -c $< -o $@ -g 
 
 %.o: %.c include/%.h
-	$(CC) -c $< -o $@ -g -Og
+	$(CC) -c $< -o $@ -g 
 
 %.o: %.cpp include/%.h
-	$(CPPC) -c $< -o $@ -g -Og
+	$(CPPC) -c $< -o $@ -g 
 
 $(FILE_BASE_NAME): $(O_FILES)
 	$(CC) -o $(FILE_BASE_NAME) $(O_FILES) $(LDLIBS)

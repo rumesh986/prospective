@@ -30,5 +30,6 @@ void mat2file(gsl_matrix *mat, FILE *file);
 void save_data(size_t label, enum dtype dtype, void *data, size_t tensor_dim, size_t ndims, size_t *dims, FILE *file);
 
 gsl_matrix *file2mat(FILE *file);
+gsl_vector *file2vec(FILE *file);
 
 #endif

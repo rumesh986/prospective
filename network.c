@@ -1,5 +1,6 @@
 #include <signal.h>
 #include <math.h>
+#include <string.h>
 
 #include <gsl/gsl_matrix.h>
 #include <gsl/gsl_blas.h>
@@ -21,7 +22,7 @@ static struct relaxation_params _relax;
 static int _sample_i;
 static bool _logging = false;
 
-void _prop_layer(struct block *ablock, bool temp_input, bool temp_output);
+void _prop_layer(struct block *ablock, bool temp_input, bool temp_output, bool store_gradients);
 int _relaxation(bool training);
 void _adjust_eps();
 void _adjust_w_layer(struct block *ablock);
@@ -30,6 +31,8 @@ void _adjust_x_layer(struct block *ablock, int iter);
 void _adjust_x_cnn(struct block *ablock, int iter);
 void _free_block(struct block *ablock);
 double _calc_energies(int iter);
+
+struct block *_build_block(enum block_t type, size_t length, void *bdata);
 
 // main code
 
@@ -70,7 +73,6 @@ void init_network(struct network *net) {
 
 			cur_block->cnn->pool_indices = gsl_vector_calloc(cur_block->length);
 
-			// cur_block->cnn->dAdx = malloc(sizeof(gsl_matrix *) * cur_block->cnn->nchannels);
 			cur_block->cnn->dAdx = gsl_matrix_alloc(cur_block->length, cur_block->prev->length);
 			cur_block->cnn->nmats = cur_block->cnn->nchannels * (cur_block->prev->type == block_cnn ? cur_block->prev->cnn->nchannels : 1);
 
@@ -85,7 +87,6 @@ void init_network(struct network *net) {
 			cur_block->cnn->dAdxP = malloc(sizeof(gsl_matrix *) * cur_block->cnn->nchannels);
 			for (int c = 0; c < cur_block->cnn->nchannels; c++) {
 				cur_block->cnn->dAdxP[c] = gsl_matrix_calloc(cur_block->cnn->conv_length, cur_block->prev->length);
-				// cur_block->cnn->dAdx[c] = gsl_matrix_calloc(cur_block->length, cur_block->prev->length);
 			}
 		}
 
@@ -112,7 +113,7 @@ void set_network(struct network *net) {
 }
 
 void save_network(char *filename) {
-	FILE *file = fopen(filename, "w");
+	FILE *file = fopen("network", "w");
 	if (!file) {
 		printf("[Error] Unable to open file to save network (%s)\n", filename);
 		exit(ERR_FILE);
@@ -120,17 +121,144 @@ void save_network(char *filename) {
 
 	size_t data[3][3] = {
 		{SAVE_TYPE, size_dt, SAVE_NETWORK},
-		{SAVE_NLAYERS, size_dt, _net.nlayers},
-		{SAVE_NTARGETS, size_dt, _net.ntargets}
+		{SAVE_ACT, size_dt, _net.act},
+		{SAVE_MNIST_PROC, size_dt, _net.proc}
 	};
-
+	
 	save_data(SAVE_ARRAY, 0, &data, 0, 3, NULL, file);
 
 	gsl_vector_ulong_view targets = gsl_vector_ulong_view_array(_net.targets, _net.ntargets);
 	save_data(SAVE_TARGETS, size_dt, &targets.vector, 1, 1, PS(1), file);
 
+	save_data(SAVE_NLAYERS, size_dt, &_net.nlayers, 0, 1, NULL, file);
+
+	struct block *cblock;
+	FLOOP(_net, cblock) {
+		if (cblock->type == block_layer) {
+			save_data(SAVE_LLAYER, size_dt, &cblock->length, 0, 1, NULL, file);
+		} else if (cblock->type == block_cnn) {
+			save_data(SAVE_LCNN, size_dt, PS(5), 0, 1, NULL, file);
+
+			size_t cnn_data[5][3] = {
+				{SAVE_CNN_KSIZE, size_dt, cblock->cnn->kernel_size},
+				{SAVE_CNN_PADDING, size_dt, cblock->cnn->padding},
+				{SAVE_CNN_STRIDE, size_dt, cblock->cnn->stride},
+				{SAVE_CNN_NCHANNELS, size_dt, cblock->cnn->nchannels},
+				{SAVE_CNN_POOL, size_dt, cblock->cnn->pool_size}
+			};
+
+			save_data(SAVE_ARRAY, size_dt, cnn_data, 0, 5, NULL, file);
+			printf("Saving cnn\n");
+		}
+
+		if (cblock->weights) {
+			save_data(SAVE_WEIGHTS, double_dt, cblock->weights, 2, 1, PS(1), file);
+			printf("saving weights\n");
+		}
+	}
+
 	fclose(file);
-	// save_data(SAVE_WEIGHTS, SAVE_DOUBLET, _net.weights, 2, 1, PS(_net.params.nlayers-1), file);
+}
+
+void load_network(struct load load) {
+	FILE *file = fopen(load.path, "rb");
+	if (!file) {
+		printf("[Error] Unable to open network file (%s)\n", load.path);
+		exit(ERR_FILE);
+	}
+
+	struct network *ret = load.net;
+	struct block *cblock = NULL;
+	size_t read_ret;
+	size_t headers[4];
+
+	while (fread(&headers, sizeof(size_t), 4, file) == 4) {
+
+		printf("Headers: label: %ld, dtype: %ld, tensor_dim: %ld, ndims: %ld\n", headers[0], headers[1], headers[2], headers[3]);
+
+		size_t scalar;
+		size_t dims[headers[3]];
+		if (headers[2] > 0)
+			fread(dims, sizeof(size_t), headers[3], file);
+		else
+			fread(&scalar, sizeof(size_t), 1, file);
+
+		if (headers[2] > 0) {
+			printf("dims: ");
+			for (int i = 0; i < headers[3]; i++)
+				printf("%ld ", dims[i]);
+			printf("\n");
+		}
+
+		switch (headers[0]) { 
+			case SAVE_TYPE:
+				if (scalar != SAVE_NETWORK) {
+					printf("Invalid network file provided, check config\n");
+					exit(ERR_INVALID_CONFIG);
+				} else {
+					printf("It is a network\n");
+				}
+				break;
+			case SAVE_ACT:
+				ret->act = scalar;
+				break;
+			case SAVE_MNIST_PROC:
+				ret->proc = scalar;
+			case SAVE_NLAYERS:
+				ret->nlayers = scalar;
+				break;
+			case SAVE_TARGETS:
+				size_t datainfo[2];
+				fread(datainfo, sizeof(size_t), 2, file);
+
+				ret->ntargets = datainfo[1];
+				ret->targets = malloc(sizeof(size_t) * datainfo[1]);
+				fread(ret->targets, sizeof(size_t), datainfo[1], file);
+
+				break;
+			case SAVE_LLAYER:
+				struct block_layer *ldata = malloc(sizeof(struct block_layer));
+
+				struct block *new_block = _build_block(block_layer, scalar, ldata);
+
+				if (!cblock) {
+					ret->head = new_block;
+					cblock = ret->head;
+				} else {
+					cblock->next = new_block;
+					cblock->next->prev = cblock;
+					cblock = cblock->next;
+				}
+				break;
+			case SAVE_LCNN:
+				struct block_cnn *cdata = malloc(sizeof(struct block_cnn));
+
+				size_t cnn_headers[4];
+				for (int i = 0; i < scalar; i++) {
+					fread(cnn_headers, sizeof(size_t), 4, file);
+					switch (cnn_headers[0]) {
+						case SAVE_CNN_KSIZE:		fread(&cdata->kernel_size, sizeof(size_t), 1, file);	break;
+						case SAVE_CNN_PADDING:		fread(&cdata->padding, sizeof(size_t), 1, file);		break;
+						case SAVE_CNN_STRIDE:		fread(&cdata->stride, sizeof(size_t), 1, file);		break;
+						case SAVE_CNN_NCHANNELS:	fread(&cdata->nchannels, sizeof(size_t), 1, file);	break;
+						case SAVE_CNN_POOL:			fread(&cdata->pool_size, sizeof(size_t), 1, file);	break;
+					}
+				}
+
+				cdata->nmats = cdata->nchannels * (cblock->type == block_cnn ? cblock->cnn->nchannels : 1);
+				cblock->next = _build_block(block_cnn, cblock->length, cdata);
+				cblock->next->prev = cblock;
+				cblock = cblock->next;
+				break;
+			case SAVE_WEIGHTS:
+				cblock->weights = file2mat(file);
+				break;
+		}
+	}
+
+	ret->tail = cblock;
+
+	fclose(file);
 }
 
 struct traindata *train(struct training train, bool logging) {
@@ -218,12 +346,6 @@ struct traindata *train(struct training train, bool logging) {
 			}
 		}
 
-		// printf("[%d] deltaw_mags: ", _sample_i);
-		// PLOOP(_net, cblock) {
-		// 	printf("%.15f ", cblock->deltaw_mags[_sample_i]);
-		// }
-		// printf("\n");
-		
 		if (train.test_samples_per_iters != 0) {
 			double train_cost = 0.0;
 			struct block *cblock;
@@ -234,7 +356,7 @@ struct traindata *train(struct training train, bool logging) {
 				gsl_vector_set_basis(test_label_vec, test_i % _net.ntargets);
 
 				PLOOP(_net, cblock) 
-					_prop_layer(cblock, true, true);
+					_prop_layer(cblock, true, true, false);
 
 				gsl_vector_memcpy(test_cost_vec, _net.tail->tlayer);
 				gsl_vector_sub(test_cost_vec, test_label_vec);
@@ -491,7 +613,7 @@ struct testdata *test(struct testing test, bool logging) {
 			} else {
 				struct block *cblock;
 				PLOOP(_net, cblock)
-					_prop_layer(cblock, false, false);
+					_prop_layer(cblock, false, false, false);
 			}
 
 			int prediction_index = gsl_vector_max_index(_net.tail->layer);
@@ -621,7 +743,9 @@ void free_testdata(struct testdata *data) {
 }
 
 void free_network(struct network *net) {
+	set_network(net);
 	free(net->targets);
+	clear_block_data();
 	struct block *cblock = net->tail;
 	while (cblock->prev) {
 		cblock = cblock->prev;
@@ -655,7 +779,7 @@ int _relaxation(bool training) {
 		// calculate epsilon
 		PLOOP(_net, cblock) {
 			gsl_vector_memcpy(cblock->epsilon, cblock->layer);
-			_prop_layer(cblock, false, true);
+			_prop_layer(cblock, false, true, true);
 			gsl_vector_sub(cblock->epsilon, cblock->tlayer);
 		}
 
@@ -756,7 +880,7 @@ int _relaxation(bool training) {
 	return iter;
 }
 
-void _prop_layer(struct block *ablock, bool temp_input, bool temp_output) {
+void _prop_layer(struct block *ablock, bool temp_input, bool temp_output, bool store_gradients) {
 	struct block *prev = ablock->prev;
 	gsl_vector *input = temp_input ? prev->tlayer : prev->layer;
 	gsl_vector *output = temp_output ? ablock->tlayer : ablock->layer;
@@ -793,39 +917,36 @@ void _prop_layer(struct block *ablock, bool temp_input, bool temp_output) {
 		for (int c = 0; c < cnn->nchannels; c++) {
 			gsl_vector_set_zero(cnn->conv_layer);
 			gsl_matrix_view cview = gsl_matrix_view_vector(cnn->conv_layer, cnn->conv_size, cnn->conv_size);
-			gsl_matrix_set_zero(cnn->dAdxP[c]);
+			if (store_gradients)
+				gsl_matrix_set_zero(cnn->dAdxP[c]);
 
 			for (int i = 0; i < cnn->conv_size; i++) {
 				for (int j = 0; j < cnn->conv_size; j++) {
 					double cview_val = gsl_matrix_get(&cview.matrix, i, j);
-					double dadxp_val = gsl_matrix_get(cnn->dAdxP[c], i, j);
+					double dadxp_val;
+
+					if (store_gradients)
+						dadxp_val = gsl_matrix_get(cnn->dAdxP[c], i, j);
+	
 					for (int c2 = 0; c2 < prev_channels; c2++) {
 						gsl_matrix_view xview = gsl_matrix_submatrix(cnn->padded_input[c2], i, j, cnn->kernel_size, cnn->kernel_size);
 						gsl_matrix_view wview = gsl_matrix_submatrix(ablock->weights, 0, (c * prev_channels + c2) * cnn->kernel_size, cnn->kernel_size, cnn->kernel_size);
 						gsl_matrix_view dxview = gsl_matrix_submatrix(padded_deriv[c2], i, j, cnn->kernel_size, cnn->kernel_size);
 
 						cview_val += mat_dot(&wview.matrix, &xview.matrix);
-						// gsl_matrix_set(&cview.matrix, i, j, gsl_matrix_get(&cview.matrix, i, j) + mat_dot(&wview.matrix, &xview.matrix));
 
-						gsl_matrix_view dadwview = gsl_matrix_submatrix(cnn->dAdw[c * prev_channels + c2], 0, (i*cnn->conv_size+j)*cnn->kernel_size, cnn->kernel_size, cnn->kernel_size);
-						gsl_matrix_memcpy(&dadwview.matrix, &xview.matrix);
-						gsl_matrix_mul_elements(&dadwview.matrix, &dxview.matrix);
+						if (store_gradients) {
+							gsl_matrix_view dadwview = gsl_matrix_submatrix(cnn->dAdw[c * prev_channels + c2], 0, (i*cnn->conv_size+j)*cnn->kernel_size, cnn->kernel_size, cnn->kernel_size);
+							gsl_matrix_memcpy(&dadwview.matrix, &xview.matrix);
+							gsl_matrix_mul_elements(&dadwview.matrix, &dxview.matrix);
 
-						dadxp_val += mat_dot(&dxview.matrix, &wview.matrix);
-
-						// for (int k1 = 0; k1 < cnn->kernel_size; k1++) {
-						// 	for (int k2 = 0; k2 < cnn->kernel_size; k2++) {
-						// 		double prev_act = gsl_matrix_get(&xview.matrix, k1, k2);
-						// 		double cur_weight = gsl_matrix_get(&wview.matrix, k1, k2);
-
-						// 		dadxp_val += (prev_act * cur_weight);
-						// 		gsl_matrix_set(cnn->dAdxP[c], i, j, gsl_matrix_get(cnn->dAdxP[c], i, j) + prev_act * cur_weight);
-						// 	}
-						// }
+							dadxp_val += mat_dot(&dxview.matrix, &wview.matrix);
+						}
 					}
 
 					gsl_matrix_set(&cview.matrix, i, j, cview_val);
-					gsl_matrix_set(cnn->dAdxP[c], i, j, dadxp_val);
+					if (store_gradients)
+						gsl_matrix_set(cnn->dAdxP[c], i, j, dadxp_val);
 				}
 			}
 
@@ -882,13 +1003,8 @@ void _adjust_w_cnn(struct block *ablock) {
 	gsl_matrix_scale(ablock->deltaw, _net.alpha);
 	gsl_matrix_add(ablock->weights, ablock->deltaw);
 
-	double norm = frobenius_norm(ablock->deltaw);
-
 	if (_logging)
-		ablock->deltaw_mags[_sample_i] = norm;
-	
-	// if (_logging)
-		// printf("DeltaW mag (%ld mats) = %.5f, normalized per mat = %.5f\n", ablock->cnn->nmats, norm, norm / ablock->cnn->nmats);
+		ablock->deltaw_mags[_sample_i] = frobenius_norm(ablock->deltaw);
 }
 
 double _calc_energies(int iter) {
@@ -897,7 +1013,7 @@ double _calc_energies(int iter) {
 	struct block *cblock;
 	PLOOP(_net, cblock) {
 		gsl_vector_memcpy(cblock->tepsilon, cblock->layer);
-		_prop_layer(cblock, false, true);
+		_prop_layer(cblock, false, true, false);
 		gsl_vector_sub(cblock->tepsilon, cblock->tlayer);
 
 		double dot;
@@ -930,6 +1046,54 @@ gsl_vector *restriction(gsl_vector *input, size_t out_size) {
 
 }
 
+struct block *_build_block(enum block_t type, size_t length, void *bdata) {
+	struct block *ret = malloc(sizeof(struct block));
+	ret->type = type;
+	ret->next = NULL;
+	ret->prev = NULL;
+	ret->weights = NULL;
+	ret->deltaw = NULL;
+	ret->energies = NULL;
+	ret->deltaw_mags = NULL;
+	ret->deltax_mags = NULL;
+
+	if (type == block_layer) {
+		ret->blayer = (struct block_layer *)bdata;
+		ret->length = length;
+	} else if (type == block_cnn) {
+		struct block_cnn *cdata = (struct block_cnn *)bdata;
+		cdata->conv_size = (((double)(sqrt(length) + 2*cdata->padding - cdata->kernel_size))/(double)(cdata->stride)) + 1;
+		cdata->conv_length = cdata->conv_size * cdata->conv_size;
+		cdata->image_size = ((double)cdata->conv_size/(double)cdata->pool_size);
+		cdata->image_length = cdata->image_size * cdata->image_size;
+
+		cdata->conv_layer = gsl_vector_calloc(cdata->conv_length);
+		cdata->padded_input = malloc(sizeof(gsl_matrix *) * cdata->nmats);
+		size_t padded_size = (cdata->conv_size-1) * cdata->stride + cdata->kernel_size;
+		for (int i = 0; i < cdata->nmats; i++)
+			cdata->padded_input[i] = gsl_matrix_calloc(padded_size, padded_size);
+
+		cdata->dAdw = NULL;
+		cdata->dAdx = NULL;
+		cdata->dAdxP = NULL;
+		
+
+		ret->length = cdata->image_length * cdata->nchannels;
+		cdata->pool_indices = gsl_vector_calloc(ret->length);
+
+		ret->cnn = cdata;
+	}
+
+
+	ret->layer = gsl_vector_calloc(ret->length);
+	ret->epsilon = gsl_vector_calloc(ret->length);
+	ret->deltax = gsl_vector_calloc(ret->length);
+	ret->tepsilon = gsl_vector_calloc(ret->length);
+	ret->tlayer = gsl_vector_calloc(ret->length);
+
+	return ret;
+}
+
 struct network *_build_coarse_net() {
 	struct network *ret = malloc(sizeof(struct network));
 	ret->alpha = _net.alpha;
@@ -948,7 +1112,7 @@ struct network *_build_coarse_net() {
 	struct block *rblock = ret->head;
 	rblock->type = block_layer;
 	rblock->blayer = malloc(sizeof(struct block_layer));
-	rblock->length = 23456789876543245678908976; // fix this
+	rblock->length = 13453456; // fix this
 
 	rblock->next = malloc(sizeof(struct block));
 	rblock->next->prev = rblock;
@@ -1014,31 +1178,32 @@ void _free_block(struct block *ablock) {
 	gsl_vector_free(ablock->tlayer);
 	gsl_vector_free(ablock->tepsilon);
 	
-	if (ablock->energies)
-		free(ablock->energies);
+	if (ablock->weights)
+		gsl_matrix_free(ablock->weights);
+	if (ablock->deltaw)
+		gsl_matrix_free(ablock->deltaw);
 
 	if (ablock->type == block_layer) {
-		if (ablock->prev) {
-			gsl_matrix_free(ablock->weights);
-			gsl_matrix_free(ablock->deltaw);
-		}
+		
 		free(ablock->blayer);
 	} else if (ablock->type == block_cnn) {
 		gsl_vector_free(ablock->cnn->pool_indices);
 		gsl_vector_free(ablock->cnn->conv_layer);
 
-		gsl_matrix_free(ablock->weights);
-		gsl_matrix_free(ablock->deltaw);
+		if (ablock->cnn->dAdx)
+			gsl_matrix_free(ablock->cnn->dAdx);
 
-		gsl_matrix_free(ablock->cnn->dAdx);
+		if (ablock->cnn->dAdw) {
+			for (int c = 0; c < ablock->cnn->nmats; c++)
+				gsl_matrix_free(ablock->cnn->dAdw[c]);
+			free(ablock->cnn->dAdw);
+		}
 
-		for (int c = 0; c < ablock->cnn->nmats; c++)
-			gsl_matrix_free(ablock->cnn->dAdw[c]);
-		free(ablock->cnn->dAdw);
-
-		for (int c = 0; c < ablock->cnn->nchannels; c++)
-			gsl_matrix_free(ablock->cnn->dAdxP[c]);
-		free(ablock->cnn->dAdxP);
+		if (ablock->cnn->dAdxP) {
+			for (int c = 0; c < ablock->cnn->nchannels; c++)
+				gsl_matrix_free(ablock->cnn->dAdxP[c]);
+			free(ablock->cnn->dAdxP);
+		}
 
 		for (int c = 0; c < (ablock->prev->type == block_cnn ? ablock->prev->cnn->nchannels : 1); c++)
 			gsl_matrix_free(ablock->cnn->padded_input[c]);

@@ -15,7 +15,7 @@
 #define SAVE_ACT			0x17
 #define SAVE_WEIGHTS_INIT	0x18
 #define SAVE_NLAYERS		0x19
-#define SAVE_LAYERS			0x1A
+// #define SAVE_LAYERS			0x1A
 #define SAVE_NTARGETS		0x1B
 #define SAVE_TARGETS		0x1C
 #define SAVE_WEIGHTS		0x1D
@@ -31,5 +31,12 @@
 #define SAVE_OUTPUTS		0x27
 #define SAVE_NUM_CORRECT	0x28
 #define SAVE_DELTAX_MAGS	0x29
+#define SAVE_LLAYER			0x2A
+#define SAVE_LCNN			0x2B
+#define SAVE_CNN_KSIZE		0x2C
+#define SAVE_CNN_PADDING	0x2D
+#define SAVE_CNN_STRIDE		0x2E
+#define SAVE_CNN_NCHANNELS	0x2F
+#define SAVE_CNN_POOL		0x30
 
 #endif

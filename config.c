@@ -180,6 +180,26 @@ struct config parse_config(char *filename) {
 			} else {
 				test->relax = false;
 			}
+		} else if (CMP_VAL(type, "load")) {
+			cJSON *op = cJSON_GetObjectItem(elem, "load");
+			cJSON *label = cJSON_GetObjectItem(op, "label");
+			cJSON *path = cJSON_GetObjectItem(op, "path");
+
+			if (!label || !path || cJSON_IsNull(path)) {
+				printf("[Error][Config] Invalid load operation, exiting...\n");
+				exit(ERR_INVALID_CONFIG);
+			}
+
+			_config.operations[arr_count].label = malloc(strlen(cJSON_GetStringValue(label))+1);
+			strcpy(_config.operations[arr_count].label, cJSON_GetStringValue(label));
+			
+			_config.operations[arr_count].type = op_load;
+
+			_config.operations[arr_count].load.path = malloc(strlen(cJSON_GetStringValue(path))+1);
+			strcpy(_config.operations[arr_count].load.path, cJSON_GetStringValue(path));
+
+			_config.operations[arr_count].load.net = malloc(sizeof(struct network));
+			_append_map(&net_map, cJSON_GetStringValue(label), _config.operations[arr_count].load.net, network_dt);
 		} else {
 			printf("Invalid operation type specified, skipping...\n");
 			continue;
@@ -288,6 +308,8 @@ void free_config() {
 			for (int j = 0; j < _config.operations[i].training.amg.depth; j++)
 				free_network(_config.operations[i].training.amg.nets[j]);
 			free(_config.operations[i].training.amg.nets);
+		} else if (_config.operations[i].type == op_load) {
+			free(_config.operations[i].load.path);
 		}
 	}
 

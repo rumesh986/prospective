@@ -83,6 +83,9 @@ int main(int argc, char **argv) {
 
 			save_testdata(test_data, testfile);
 			free_testdata(test_data);
+		} else if (config.operations[i].type == op_load) {
+			load_network(config.operations[i].load);
+			set_network(config.operations[i].load.net);
 		}
 
 	}

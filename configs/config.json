@@ -3,7 +3,7 @@
 		"logging": true,
 		"database": "mnist",
 		"label": "trial",
-		"results_dir": "tests/lenet"
+		"results_dir": null
 	},
 	"blocks": [
 		{
@@ -123,7 +123,7 @@
 				"layer_120",
 				"layer_84"
 			],
-			"targets": [1,8]
+			"targets": null
 		}
 	],
 	"relaxations": [
@@ -158,18 +158,25 @@
 			"training": {
 				"label": "lenet1",
 				"network": "lenet1",
-				"train_samples": 1000,
+				"train_samples": 1,
 				"seed": 0,
-				"test_samples_per_iter": 10,
+				"test_samples_per_iter": 1,
 				"relaxation": "default_relaxation",
 				"save": true
 			}
 		},
 		{
+			"type": "load",
+			"load": {
+				"path": "network",
+				"label": "lenet2"
+			}
+		},
+		{
 			"type": "testing",
 			"testing": {
-				"network": "lenet1",
-				"num_samples": 10,
+				"network": "lenet2",
+				"num_samples": 2,
 				"relaxation": null,
 				"label": "norelax"
 			}

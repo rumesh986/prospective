@@ -106,6 +106,11 @@ struct amg {
 	// gsl_vector *
 };
 
+struct load {
+	struct network *net;
+	char *path;
+};
+
 struct training {
 	struct relaxation_params relax;
 	struct network *net;
@@ -150,6 +155,7 @@ struct testdata {
 void init_network(struct network *net);
 void set_network(struct network *net);
 void save_network(char *filename);
+void load_network(struct load load);
 void free_network(struct network *net);
 void clear_block_data();
 

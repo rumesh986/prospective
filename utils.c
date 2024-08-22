@@ -165,11 +165,23 @@ void save_data(size_t label, enum dtype dtype, void *data, size_t tensor_dim, si
 
 gsl_matrix *file2mat(FILE *file) {
 	size_t datainfo[2];
-	fread(datainfo, sizeof(size_t), 3, file);
+	fread(datainfo, sizeof(size_t), 2, file);
 
-	gsl_matrix *ret = gsl_matrix_alloc(datainfo[1], datainfo[2]);
+	// printf("file2mat dims: %ldx%ld\n", )
+
+	gsl_matrix *ret = gsl_matrix_calloc(datainfo[0], datainfo[1]);
 	gsl_matrix_fread(file, ret);
 
+	return ret;
+}
+
+gsl_vector *file2vec(FILE *file) {
+	size_t datainfo[2];
+	fread(datainfo, sizeof(size_t), 2, file);
+	
+	gsl_vector *ret = gsl_vector_calloc(datainfo[1]);
+	gsl_vector_fread(file, ret);
+	
 	return ret;
 }
 
