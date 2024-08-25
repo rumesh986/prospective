@@ -168,9 +168,9 @@
 		{
 			"type": "training",
 			"training": {
-				"label": "cnn_small1",
-				"network": "cnn_small1",
-				"train_samples": 10,
+				"label": "lenet1",
+				"network": "lenet1",
+				"train_samples": 1000,
 				"seed": 0,
 				"test_samples_per_iter": 1,
 				"relaxation": "default_relaxation",
@@ -183,8 +183,8 @@
 		{
 			"type": "testing",
 			"testing": {
-				"network": "cnn_small1",
-				"num_samples": 10,
+				"network": "lenet1",
+				"num_samples": 1000,
 				"relaxation": null,
 				"label": "norelax"
 			}

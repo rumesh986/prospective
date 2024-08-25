@@ -1209,10 +1209,16 @@ struct block *_build_block(enum block_t type, size_t length, void *bdata) {
 		ret->length = length;
 	} else if (type == block_cnn) {
 		struct block_cnn *cdata = (struct block_cnn *)bdata;
-		cdata->conv_size = (((double)(sqrt(length) + 2*cdata->padding - cdata->kernel_size))/(double)(cdata->stride)) + 1;
-		cdata->conv_length = cdata->conv_size * cdata->conv_size;
-		cdata->image_size = ((double)cdata->conv_size/(double)cdata->pool_size);
+		cdata->image_length = length / cdata->nchannels;
+		cdata->image_size = floor(sqrt(cdata->image_length));
 		cdata->image_length = cdata->image_size * cdata->image_size;
+		cdata->conv_size = cdata->image_size * cdata->pool_size;
+		cdata->conv_length = cdata->conv_size * cdata->conv_size;
+
+		// cdata->conv_size = (((double)(sqrt(length) + 2*cdata->padding - cdata->kernel_size))/(double)(cdata->stride)) + 1;
+		// cdata->conv_length = cdata->conv_size * cdata->conv_size;
+		// cdata->image_size = ((double)cdata->conv_size/(double)cdata->pool_size);
+		// cdata->image_length = cdata->image_size * cdata->image_size;
 
 		cdata->conv_layer = gsl_vector_calloc(cdata->conv_length);
 		cdata->padded_input = malloc(sizeof(gsl_matrix *) * cdata->nmats);
@@ -1236,7 +1242,6 @@ struct block *_build_block(enum block_t type, size_t length, void *bdata) {
 	ret->deltax = gsl_vector_calloc(ret->length);
 	ret->tepsilon = gsl_vector_calloc(ret->length);
 	ret->tlayer = gsl_vector_calloc(ret->length);
-	// ret->amg_indices = gsl_vector_calloc(ret->length);
 	ret->amg_indices = malloc(sizeof(size_t *) * ret->length);
 
 	for (int i = 0; i < ret->length; i++)
@@ -1253,12 +1258,9 @@ void _downscale_layer(gsl_vector *out, gsl_vector *in, size_t **indices) {
 	gsl_matrix_view omview = gsl_matrix_view_vector(out, out_size, out_size);
 
 
-	// const double kern_arr[4] = {1, 1, 1, 1};
-	// const gsl_matrix_const_view kernel = gsl_matrix_const_view_array(kern_arr, 2, 2);
 	gsl_matrix *kernel = gsl_matrix_calloc(2,2);
 	gsl_matrix_set_all(kernel, 1);
 
-	// size_t *ret = malloc(sizeof(size_t) * out->size);
 	int index = 0;
 	
 	for (int i = 0; i < out_size; i++) {
@@ -1273,7 +1275,6 @@ void _downscale_layer(gsl_vector *out, gsl_vector *in, size_t **indices) {
 			// ret[index] = (2*i + maxi) * inp_size + (2*j + maxj);
 			// gsl_vector_set(indices, index, (2*i + maxi) * inp_size + (2*j + maxj));
 
-			// indices[index] = malloc(sizeof(size_t) * 4);
 			indices[index][0] = 2*i*inp_size + 2*j;
 			indices[index][1] = 2*i*inp_size + 2*j +1;
 			indices[index][2] = (2*i + 1)*inp_size + 2*j;
@@ -1286,18 +1287,19 @@ void _downscale_layer(gsl_vector *out, gsl_vector *in, size_t **indices) {
 			index++;
 		}
 	}
-
-	// return ret;
 }
 
 
 // update this later with interpolation
 void _upscale_layer(gsl_vector *out, gsl_vector *in, size_t **indices) {
+	// gsl_matrix_view imview = gsl_matrix_view_vector(in, sqrt(in->size), sqrt(in->size));
+	// gsl_matrix_view omview = gsl_matrix_view_vector(out, sqrt(out->size), sqrt(out->size));
 
 	for (int i = 0; i < in->size; i++) {
-		for (int j = 0; j < 4; j++) {
+		gsl_vector_set(out, indices[i][0], gsl_vector_get(in, i));
+		// gsl_vector_set(out, indices[i][1], (gsl_vector_get(in, i )));
+		for (int j = 0; j < 4; j++)
 			gsl_vector_set(out, indices[i][j], gsl_vector_get(in, i));
-		}
 	}
 
 }
@@ -1340,28 +1342,16 @@ void _build_coarse_net(struct network *net) {
 
 				rblock->weights = gsl_matrix_calloc(rblock->length, rblock->prev->length);
 
-				// for (int i = 0; i < rblock->length; i++) {
-				// 	gsl_vector_view wview = gsl_matrix_row(cblock->weights, gsl_vector_get(cblock->amg_indices, i));
-				// 	gsl_matrix_set_row(rblock->weights, i, &wview.vector);
-				// }
-
 				for (int i = 0; i < rblock->weights->size1; i++) {
 					for (int j = 0; j < rblock->weights->size2; j++) {
 						double weight = gsl_matrix_get(cblock->weights, cblock->next ? rblock->amg_indices[i][0] : i, rblock->prev->amg_indices[j][0]);
 						gsl_matrix_set(rblock->weights, i, j, weight);
 					}
 				}
-					
-
 			} else {
 				net->head = newblock;
 				rblock = net->head;
 			}
-
-
-
-			// handle weight copying
-
 
 		} else if (cblock->type == block_cnn) {
 			struct block_cnn *cdata = malloc(sizeof(struct block_cnn));
@@ -1374,7 +1364,11 @@ void _build_coarse_net(struct network *net) {
 			cdata->pool_type = cblock->cnn->pool_type;
 			cdata->nmats = cdata->nchannels * (cblock->prev->type == block_cnn ? cblock->prev->cnn->nchannels : 1);
 
-			rblock->next = _build_block(block_cnn, cblock->length/4, cdata);
+			size_t newlen = floor(cblock->cnn->image_size/2) * floor(cblock->cnn->image_size/2);
+			printf("newlen = %ld\n", newlen);
+			// floor(sqrt(cblock->length / cdata->nchannels)/2) * floor(sqrt(cblock->length / cdata->nchannels)/2);
+
+			rblock->next = _build_block(block_cnn, newlen * cdata->nchannels, cdata);
 			rblock->next->prev = rblock;
 			rblock = rblock->next;
 
@@ -1510,4 +1504,33 @@ void _free_block(struct block *ablock) {
 	}
 
 	free(ablock);
+}
+
+
+void trial_network() {
+	gsl_vector *in = gsl_vector_calloc(16);
+	gsl_vector *out = gsl_vector_calloc(4);
+
+	for (int i = 0; i < 16; i++)
+		gsl_vector_set(in, i, i);
+	
+	gsl_matrix_view imview = gsl_matrix_view_vector(in, 4, 4);
+	gsl_matrix_view omview = gsl_matrix_view_vector(out, 2, 2);
+
+	print_mat(&imview.matrix, "in orig", false);
+	print_mat(&omview.matrix, "out orig", false);
+
+	size_t **indices = malloc(sizeof(size_t) * 4);
+	for (int i = 0; i < 4; i++)
+		indices[i] = malloc(sizeof(size_t) * 4);
+
+	_downscale_layer(out, in, indices);
+
+	print_mat(&omview.matrix, "out ds", false);
+
+	gsl_vector_set_zero(in);
+
+	_upscale_layer(in, out, indices);
+
+	print_mat(&imview.matrix, "in us", false);
 }
