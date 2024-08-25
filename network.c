@@ -15,8 +15,6 @@
 #define PLOOP(a, b) for (b = a.head->next; b; b=b->next) // partial loop, all layers except input layer
 #define PLOOP2(a, b) for (b = a.head; b->next; b=b->next) // partial loop, all layers except output layer
 
-struct traindata *_trainresults = NULL;
-
 static struct network _net;
 static struct relaxation_params _relax;
 static int _sample_i;
@@ -32,7 +30,12 @@ void _adjust_x_cnn(struct block *ablock, int iter);
 void _free_block(struct block *ablock);
 double _calc_energies(int iter);
 
+void _build_coarse_net(struct network *net);
 struct block *_build_block(enum block_t type, size_t length, void *bdata);
+void _downscale_layer(gsl_vector *out, gsl_vector *in, size_t **indices);
+void _upscale_layer(gsl_vector *out, gsl_vector *in, size_t **indices);
+// size_t *_downsample_image(gsl_vector *out, gsl_vector *in);
+struct traindata *_train(struct training train, bool logging, int amg_depth, size_t num_samples, db_dataset *data_train, db_dataset *data_test, gsl_vector *test_label_vec, gsl_vector *test_cost_vec);
 
 // main code
 
@@ -292,7 +295,6 @@ struct traindata *train(struct training train, bool logging) {
 		ret->iter_counts = malloc(sizeof(size_t) * num_samples);
 		ret->train_costs = malloc(sizeof(double) * num_samples);
 		ret->num_samples = num_samples;
-		_trainresults = ret;
 
 		// prepare lenergy and deltaw_mags storage location
 		struct block *cblock;
@@ -388,7 +390,6 @@ struct traindata *train(struct training train, bool logging) {
 		gsl_vector_free(test_cost_vec);
 	}
 
-	_trainresults = NULL;
 	_logging = false;
 	return ret;
 }
@@ -495,11 +496,159 @@ struct traindata **train_amg(struct training train, bool logging) {
 	if (num_samples == 0)
 		num_samples = max_count * _net.ntargets;
 	
-	struct traindata **ret = malloc(sizeof(struct traindata *) * train.amg.depth);
+	struct traindata **ret = NULL;
+	if (logging)
+		ret = malloc(sizeof(struct traindata *) * train.amg.depth);
 
-	for (int amg_depth = 0; amg_depth < train.amg.depth; amg_depth++) {
-		// do multigrid
+	gsl_vector *test_label_vec;
+	gsl_vector *test_cost_vec;
+	if (train.test_samples_per_iters != 0) {
+		test_label_vec = gsl_vector_calloc(_net.ntargets);
+		test_cost_vec = gsl_vector_calloc(_net.ntargets);
 	}
+
+	_train(train, logging, 0, num_samples, data_train, data_test, test_label_vec, test_cost_vec);
+
+	// for (int amg_depth = 0; amg_depth < train.amg.depth; amg_depth++) {
+	// 	// do multigrid
+		
+	// }
+
+	struct block *cblock;
+	PLOOP(_net, cblock) {
+		switch (cblock->type) {
+			case block_layer:	_adjust_w_layer(cblock);	break;
+			case block_cnn:		_adjust_w_cnn(cblock);		break;
+		}
+	}
+
+	printf("Completed training network, freeing datasets...\n");
+
+	for (int i = 0; i < _net.ntargets; i++) {
+		db_free_dataset(data_train[i]);
+		db_free_dataset(data_test[i]);
+	}
+
+	if (train.test_samples_per_iters != 0) {
+		gsl_vector_free(test_label_vec);
+		gsl_vector_free(test_cost_vec);
+	}
+
+	_logging = false;
+
+	return ret;
+}
+
+struct traindata *_train(struct training train, bool logging, int amg_depth, size_t num_samples, db_dataset *data_train, db_dataset *data_test, gsl_vector *test_label_vec, gsl_vector *test_cost_vec) {
+
+	if (amg_depth == train.amg.depth) {
+		printf("Hit depth limit\n");
+		return NULL;
+	}
+
+	if (amg_depth != 0) {
+		struct network *net = train.amg.nets[amg_depth];
+		_build_coarse_net(net);
+		set_network(net);
+	}
+
+	if (amg_depth < train.amg.depth-1) {
+
+		_train(train, logging, amg_depth+1, num_samples, data_train, data_test, test_label_vec, test_cost_vec);
+	}
+	
+	printf("Preparing to train at depth %d\n", amg_depth);
+
+	struct traindata *ret = malloc(sizeof(struct traindata));
+
+	if (_logging) {
+		ret = malloc(sizeof(struct traindata));
+		ret->iter_counts = malloc(sizeof(size_t) * num_samples);
+		ret->train_costs = malloc(sizeof(double) * num_samples);
+		ret->num_samples = num_samples;
+
+		struct block *cblock;
+		FLOOP(_net, cblock) {
+			cblock->deltaw_mags = malloc(sizeof(double) * num_samples);
+			cblock->deltax_mags = malloc(sizeof(double *) * num_samples);
+			cblock->energies = malloc(sizeof(double *) * num_samples);
+			cblock->nenergies = num_samples;
+			for (int i = 0; i < num_samples; i++) {
+				cblock->energies[i] = NULL;
+				cblock->deltax_mags[i] = NULL;
+			}
+		}
+	}
+
+	int target_counter = -1;
+	printf("Training on %ld images at depth %d\n", num_samples, amg_depth);
+	for (_sample_i = 0; _sample_i < num_samples; _sample_i++) {
+		int cur_target = _sample_i % _net.ntargets;
+		if (cur_target == 0)
+			target_counter++;
+		
+		if (amg_depth > 0)
+			_downscale_layer(_net.head->layer, data_train[cur_target].images[target_counter], _net.head->amg_indices);
+		// gsl_vector_memcpy(_net.head->layer, data_train[cur_target].images[targ])
+		gsl_vector_set_basis(_net.tail->layer, cur_target);
+
+		struct block *cblock;
+		HLOOP(_net, cblock) {
+			if (cblock->type == block_cnn) {
+				for (int c = 0; c < cblock->cnn->nmats; c++)
+					gsl_matrix_set_zero(cblock->cnn->dAdw[c]);
+			}
+		}
+
+		int iters = _relaxation(true);
+
+		// if (train.test_samples_per_iters != 0) {
+		// 	double train_cost = 0.0;
+			
+		// 	for (int test_i = 0; test_i < train.test_samples_per_iters; test_i++) {
+		// 		_downsample_image(_net.head->tlayer, data_test[test_i % _net.ntargets].images[test_i], NULL);
+		// 		gsl_vector_set_zero(_net.tail->tlayer);
+		// 		gsl_vector_set_basis(test_label_vec, test_i % _net.ntargets);
+
+		// 		PLOOP(_net, cblock) {
+		// 			_prop_layer(cblock, true, true, false);
+		// 		}
+
+		// 		gsl_vector_memcpy(test_cost_vec, _net.tail->tlayer);
+		// 		gsl_vector_sub(test_cost_vec, test_label_vec);
+
+		// 		train_cost += gsl_blas_dnrm2(test_cost_vec);
+		// 	}
+
+		// 	train_cost /= (double)train.test_samples_per_iters;
+		// 	ret->train_costs[_sample_i] = train_cost;
+		// }
+
+		if (_logging)
+			ret->iter_counts[_sample_i] = iters;
+		
+		_net.lenergy_chunks = 0;
+	}
+	printf("Completed training at depth %d\n", amg_depth);
+
+	if (amg_depth > 0) {
+		set_network(train.amg.nets[amg_depth-1]);
+		struct network *net = train.amg.nets[amg_depth];
+
+		struct block *cblock;
+		struct block *dblock = net->head;
+		PLOOP2(_net, cblock) {
+			_upscale_layer(cblock->layer, dblock->layer, dblock->amg_indices);
+			dblock = dblock->next;
+		}
+
+		// upscale network
+		//switch to avg
+		// change amg_indices to size_t**, each index has an array of points it maps back to
+	}
+
+
+	return ret;
 }
 
 void clear_block_data() {
@@ -744,6 +893,8 @@ void free_testdata(struct testdata *data) {
 
 void free_network(struct network *net) {
 	set_network(net);
+
+	printf("freeing network %p\n", net);
 	free(net->targets);
 	clear_block_data();
 	struct block *cblock = net->tail;
@@ -1042,10 +1193,6 @@ void _print_lenergies(int iter) {
 	printf("\n");
 }
 
-gsl_vector *restriction(gsl_vector *input, size_t out_size) {
-
-}
-
 struct block *_build_block(enum block_t type, size_t length, void *bdata) {
 	struct block *ret = malloc(sizeof(struct block));
 	ret->type = type;
@@ -1077,7 +1224,6 @@ struct block *_build_block(enum block_t type, size_t length, void *bdata) {
 		cdata->dAdx = NULL;
 		cdata->dAdxP = NULL;
 		
-
 		ret->length = cdata->image_length * cdata->nchannels;
 		cdata->pool_indices = gsl_vector_calloc(ret->length);
 
@@ -1090,85 +1236,236 @@ struct block *_build_block(enum block_t type, size_t length, void *bdata) {
 	ret->deltax = gsl_vector_calloc(ret->length);
 	ret->tepsilon = gsl_vector_calloc(ret->length);
 	ret->tlayer = gsl_vector_calloc(ret->length);
+	// ret->amg_indices = gsl_vector_calloc(ret->length);
+	ret->amg_indices = malloc(sizeof(size_t *) * ret->length);
+
+	for (int i = 0; i < ret->length; i++)
+		ret->amg_indices[i] = malloc(sizeof(size_t) * 4);
 
 	return ret;
 }
 
-struct network *_build_coarse_net() {
-	struct network *ret = malloc(sizeof(struct network));
-	ret->alpha = _net.alpha;
-	ret->act = _net.act;
-	ret->weight_init = _net.weight_init;
-	ret->proc = _net.proc;
+void _downscale_layer(gsl_vector *out, gsl_vector *in, size_t **indices) {
+	size_t inp_size = sqrt(in->size);
+	gsl_matrix_view imview = gsl_matrix_view_vector(in, inp_size, inp_size);
 
-	ret->ntargets = _net.ntargets;
-	ret->targets = _net.targets;
-
-	ret->lenergy_chunks = 0;
-	ret->save = _net.save;
-
-	// create head block (special restricted block layer)
-	ret->head = malloc(sizeof(struct block));
-	struct block *rblock = ret->head;
-	rblock->type = block_layer;
-	rblock->blayer = malloc(sizeof(struct block_layer));
-	rblock->length = 13453456; // fix this
-
-	rblock->next = malloc(sizeof(struct block));
-	rblock->next->prev = rblock;
-
-	rblock->layer = restriction(_net.head->layer, rblock->length);
-	rblock->epsilon = gsl_vector_calloc(rblock->length);
-	rblock->deltax = gsl_vector_calloc(rblock->length);
-	rblock->tlayer = gsl_vector_calloc(rblock->length);
-	rblock->tepsilon = gsl_vector_calloc(rblock->length);
-
-	struct block *cblock;
-	PLOOP(_net, cblock) {
-		if (cblock->type == block_layer) {
-			// single layers are not restricted
-			rblock->type = block_layer;
-			rblock->blayer = malloc(sizeof(struct block_layer));
-			rblock->length = cblock->length;
+	size_t out_size = sqrt(out->size);
+	gsl_matrix_view omview = gsl_matrix_view_vector(out, out_size, out_size);
 
 
-	// pick out weights from finer mesh
-	// need to choose the correct rows so itll fit here
+	// const double kern_arr[4] = {1, 1, 1, 1};
+	// const gsl_matrix_const_view kernel = gsl_matrix_const_view_array(kern_arr, 2, 2);
+	gsl_matrix *kernel = gsl_matrix_calloc(2,2);
+	gsl_matrix_set_all(kernel, 1);
 
+	// size_t *ret = malloc(sizeof(size_t) * out->size);
+	int index = 0;
+	
+	for (int i = 0; i < out_size; i++) {
+		for (int j = 0; j < out_size; j++) {
+			gsl_matrix_view smview = gsl_matrix_submatrix(&imview.matrix, 2*i, 2*j, 2, 2);
 
-			
-		} else if (cblock->type == block_cnn) {
-			// cnn blocks are restricted
-			rblock->type = block_cnn;
-			rblock->cnn = malloc(sizeof(struct block_cnn));
-			rblock->cnn->kernel_size = cblock->cnn->kernel_size;
-			rblock->cnn->stride = cblock->cnn->stride;
-			rblock->cnn->padding = cblock->cnn->padding;
-			rblock->cnn->nchannels = cblock->cnn->nchannels;
-			rblock->cnn->pool_size = cblock->cnn->pool_size;
-			rblock->cnn->pool_type = cblock->cnn->pool_type;
-			rblock->weights = cblock->weights; // not going to be adjusted so should be fine
-			rblock->deltaw = NULL;
+			size_t maxi, maxj;
+			gsl_matrix_max_index(&smview.matrix, &maxi, &maxj);
 
-			// restrict channels
-			for (int i = 0; i < rblock->cnn->nchannels; i++) {
-				gsl_vector_view cview = gsl_vector_subvector(cblock->layer, i*cblock->cnn->image_length, cblock->cnn->image_length);
-				gsl_vector_view rview = gsl_vector_subvector(rblock->layer, i*rblock->cnn->image_length, rblock->cnn->image_length);
+			// printf("working on %p index = %d\n", out, index);
 
-				gsl_vector *restricted = restriction(&cview.vector, rblock->cnn->image_length);
-				gsl_vector_memcpy(&rview.vector, restricted);
-			}
-		}
+			// ret[index] = (2*i + maxi) * inp_size + (2*j + maxj);
+			// gsl_vector_set(indices, index, (2*i + maxi) * inp_size + (2*j + maxj));
 
-		if (cblock->next) {
-			rblock->next = malloc(sizeof(struct block));
-			rblock->next->prev = rblock;
-			rblock = rblock->next;
+			// indices[index] = malloc(sizeof(size_t) * 4);
+			indices[index][0] = 2*i*inp_size + 2*j;
+			indices[index][1] = 2*i*inp_size + 2*j +1;
+			indices[index][2] = (2*i + 1)*inp_size + 2*j;
+			indices[index][3] = (2*i + 1)*inp_size + 2*j + 1;
+
+			double avg = mat_dot(&smview.matrix, kernel) / 4.0;
+
+			gsl_matrix_set(&omview.matrix, i, j, avg);
+			// gsl_matrix_set(&omview.matrix, i, j, gsl_matrix_get(&smview.matrix, maxi, maxj));
+			index++;
 		}
 	}
 
-	ret->tail = rblock;
+	// return ret;
 }
+
+
+// update this later with interpolation
+void _upscale_layer(gsl_vector *out, gsl_vector *in, size_t **indices) {
+
+	for (int i = 0; i < in->size; i++) {
+		for (int j = 0; j < 4; j++) {
+			gsl_vector_set(out, indices[i][j], gsl_vector_get(in, i));
+		}
+	}
+
+}
+
+void _build_coarse_net(struct network *net) {
+	printf("Building coarse network at %p\n", net);
+	net->alpha = _net.alpha;
+	net->act = _net.act;
+	net->weight_init = _net.weight_init;
+	net->proc = _net.proc;
+
+	net->ntargets = _net.ntargets;
+	net->targets = malloc(sizeof(size_t) * net->ntargets);
+	memcpy(net->targets, _net.targets, sizeof(size_t) * net->ntargets);
+
+	net->lenergy_chunks = 0;
+	net->save = _net.save;
+
+	net->head = NULL;
+	// net->tail = NULL;
+
+	struct block *rblock = NULL;
+	struct block *cblock;
+	FLOOP(_net, cblock) {
+		if (cblock->type == block_layer) {
+			printf(" block layer size %ld\n", sizeof(struct block_layer));
+			struct block_layer *trial = malloc(2);
+			struct block_layer *ldata = malloc(sizeof(struct block_layer));
+			struct block *newblock =  _build_block(block_layer, cblock->next ? floor(sqrt(cblock->length)/2)*floor(sqrt(cblock->length)/2) : cblock->length, ldata);
+			// struct block *newblock =  _build_block(block_layer, cblock->length, ldata);
+
+			if (cblock->next)
+				_downscale_layer(newblock->layer, cblock->layer, newblock->amg_indices);
+			// gsl_vector_memcpy(newblock->layer, cblock->layer);
+
+			if (rblock) {
+				rblock->next = newblock;
+				rblock->next->prev = rblock;
+				rblock = rblock->next;
+
+				rblock->weights = gsl_matrix_calloc(rblock->length, rblock->prev->length);
+
+				// for (int i = 0; i < rblock->length; i++) {
+				// 	gsl_vector_view wview = gsl_matrix_row(cblock->weights, gsl_vector_get(cblock->amg_indices, i));
+				// 	gsl_matrix_set_row(rblock->weights, i, &wview.vector);
+				// }
+
+				for (int i = 0; i < rblock->weights->size1; i++) {
+					for (int j = 0; j < rblock->weights->size2; j++) {
+						double weight = gsl_matrix_get(cblock->weights, cblock->next ? rblock->amg_indices[i][0] : i, rblock->prev->amg_indices[j][0]);
+						gsl_matrix_set(rblock->weights, i, j, weight);
+					}
+				}
+					
+
+			} else {
+				net->head = newblock;
+				rblock = net->head;
+			}
+
+
+
+			// handle weight copying
+
+
+		} else if (cblock->type == block_cnn) {
+			struct block_cnn *cdata = malloc(sizeof(struct block_cnn));
+
+			cdata->kernel_size = cblock->cnn->kernel_size;
+			cdata->padding = cblock->cnn->padding;
+			cdata->stride = cblock->cnn->stride;
+			cdata->nchannels = cblock->cnn->nchannels;
+			cdata->pool_size = cblock->cnn->pool_size;
+			cdata->pool_type = cblock->cnn->pool_type;
+			cdata->nmats = cdata->nchannels * (cblock->prev->type == block_cnn ? cblock->prev->cnn->nchannels : 1);
+
+			rblock->next = _build_block(block_cnn, cblock->length/4, cdata);
+			rblock->next->prev = rblock;
+			rblock = rblock->next;
+
+			rblock->weights = gsl_matrix_calloc(cblock->weights->size1, cblock->weights->size2);
+			gsl_matrix_memcpy(rblock->weights, cblock->weights);
+
+			rblock->cnn->dAdx = gsl_matrix_calloc(rblock->length, rblock->prev->length);
+
+			rblock->cnn->dAdw = malloc(sizeof(gsl_matrix *) * rblock->cnn->nmats);
+			for (int c = 0; c < rblock->cnn->nmats; c++)
+				rblock->cnn->dAdw[c] = gsl_matrix_calloc(rblock->cnn->kernel_size, rblock->cnn->kernel_size * rblock->cnn->conv_length);
+
+			rblock->cnn->dAdxP = malloc(sizeof(gsl_matrix *) * rblock->cnn->nchannels);
+			for (int c = 0; c < rblock->cnn->nchannels; c++) {
+				rblock->cnn->dAdxP[c] = gsl_matrix_calloc(rblock->cnn->conv_length, rblock->prev->length);
+			}
+
+			for (int c = 0; c < rblock->cnn->nchannels; c++) {
+				gsl_vector_view vview = gsl_vector_subvector(rblock->layer, c*rblock->cnn->image_length, rblock->cnn->image_length);
+				gsl_vector_view cvview = gsl_vector_subvector(cblock->layer, c*cblock->cnn->image_length, cblock->cnn->image_length);
+
+				_downscale_layer(&vview.vector, &cvview.vector, rblock->amg_indices+c*rblock->cnn->image_length);
+				
+			}
+		}
+	}
+
+	net->tail = rblock;
+}
+
+	// create head block (special restricted block layer)
+	// net->head = malloc(sizeof(struct block));
+	// struct block *rblock = net->head;
+	// rblock->type = block_layer;
+	// rblock->blayer = malloc(sizeof(struct block_layer));
+	// rblock->length = 13453456; // fix this
+
+	// rblock->next = malloc(sizeof(struct block));
+	// rblock->next->prev = rblock;
+
+	// rblock->layer = restriction(_net.head->layer, rblock->length);
+	// rblock->epsilon = gsl_vector_calloc(rblock->length);
+	// rblock->deltax = gsl_vector_calloc(rblock->length);
+	// rblock->tlayer = gsl_vector_calloc(rblock->length);
+	// rblock->tepsilon = gsl_vector_calloc(rblock->length);
+
+	// struct block *cblock;
+	// PLOOP(_net, cblock) {
+	// 	if (cblock->type == block_layer) {
+	// 		// single layers are not restricted
+	// 		rblock->type = block_layer;
+	// 		rblock->blayer = malloc(sizeof(struct block_layer));
+	// 		rblock->length = cblock->length;
+
+
+	// // pick out weights from finer mesh
+	// // need to choose the correct rows so itll fit here
+
+
+			
+	// 	} else if (cblock->type == block_cnn) {
+	// 		// cnn blocks are restricted
+	// 		rblock->type = block_cnn;
+	// 		rblock->cnn = malloc(sizeof(struct block_cnn));
+	// 		rblock->cnn->kernel_size = cblock->cnn->kernel_size;
+	// 		rblock->cnn->stride = cblock->cnn->stride;
+	// 		rblock->cnn->padding = cblock->cnn->padding;
+	// 		rblock->cnn->nchannels = cblock->cnn->nchannels;
+	// 		rblock->cnn->pool_size = cblock->cnn->pool_size;
+	// 		rblock->cnn->pool_type = cblock->cnn->pool_type;
+	// 		rblock->weights = cblock->weights; // not going to be adjusted so should be fine
+	// 		rblock->deltaw = NULL;
+
+	// 		// restrict channels
+	// 		for (int i = 0; i < rblock->cnn->nchannels; i++) {
+	// 			gsl_vector_view cview = gsl_vector_subvector(cblock->layer, i*cblock->cnn->image_length, cblock->cnn->image_length);
+	// 			gsl_vector_view rview = gsl_vector_subvector(rblock->layer, i*rblock->cnn->image_length, rblock->cnn->image_length);
+
+	// 			gsl_vector *restricted = restriction(&cview.vector, rblock->cnn->image_length);
+	// 			gsl_vector_memcpy(&rview.vector, restricted);
+	// 		}
+	// 	}
+
+	// 	if (cblock->next) {
+	// 		rblock->next = malloc(sizeof(struct block));
+	// 		rblock->next->prev = rblock;
+	// 		rblock = rblock->next;
+	// 	}
+	// }
+
+
 
 void _free_block(struct block *ablock) {
 	gsl_vector_free(ablock->layer);

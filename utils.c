@@ -53,7 +53,9 @@ void print_mat(gsl_matrix *mat, char *title, bool print_index) {
 	}
 	for (int i = 0; i< mat->size1; i++) {
 		if (print_index)
-			printf("[%3d] |", i);
+			printf("[%3d] ", i);
+		
+		printf("| ");
 		for (int j = 0; j < mat->size2; j++) 
 			printf(" %.1f ", gsl_matrix_get(mat, i, j));
 		printf("|\n");

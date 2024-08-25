@@ -71,6 +71,8 @@ struct block {
 	double **energies;
 	double *deltaw_mags;
 	double **deltax_mags;
+
+	size_t **amg_indices;
 };
 
 struct block_layer {};
@@ -162,6 +164,7 @@ void clear_block_data();
 struct traindata *train(struct training train, bool logging);
 void save_traindata(struct traindata *data, char *filename);
 void free_traindata(struct traindata *data);
+struct traindata **train_amg(struct training train, bool logging);
 
 struct testdata *test(struct testing test, bool logging);
 void save_testdata(struct testdata *data, char *filename);

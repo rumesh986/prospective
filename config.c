@@ -144,13 +144,23 @@ struct config parse_config(char *filename) {
 			_set_val(op, "test_samples_per_iter", &train->test_samples_per_iters, PS(0), size_dt);
 
 			cJSON *amg = cJSON_GetObjectItem(op, "multigrid");
+
+			// train->amg.nets = train->amg.depth > 1 ? malloc(sizeof(struct network *) * train->amg.depth) : NULL;
 			if (amg) {
 				_set_val(amg, "depth", &train->amg.depth, PS(1), size_dt);
+				train->amg.nets = malloc(sizeof(struct network *) * train->amg.depth);
+				train->amg.nets[0] = train->net;
+				for (int i = 1; i < train->amg.depth; i++) {
+					train->amg.nets[i] = malloc(sizeof(struct network));
+					char *amg_label = malloc(strlen(cJSON_GetStringValue(network_label))+10);
+					sprintf(amg_label, "%s-%d", cJSON_GetStringValue(network_label), i);
+					_append_map(&net_map, amg_label, train->amg.nets[i], network_dt);
+				}
 			} else {
 				train->amg.depth = 1;
+				train->amg.nets = NULL;
 			}
 
-			train->amg.nets = train->amg.depth > 1 ? malloc(sizeof(struct network *) * train->amg.depth) : NULL;
 
 		} else if (CMP_VAL(type, "testing")) {
 			cJSON *op = cJSON_GetObjectItem(elem, "testing");
@@ -305,8 +315,6 @@ void free_config() {
 		free(_config.operations[i].label);
 
 		if (_config.operations[i].type == op_training && _config.operations->training.amg.depth > 1) {
-			for (int j = 0; j < _config.operations[i].training.amg.depth; j++)
-				free_network(_config.operations[i].training.amg.nets[j]);
 			free(_config.operations[i].training.amg.nets);
 		} else if (_config.operations[i].type == op_load) {
 			free(_config.operations[i].load.path);

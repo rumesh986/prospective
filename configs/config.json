@@ -166,13 +166,6 @@
 			}
 		},
 		{
-			"type": "load",
-			"load": {
-				"path": "network",
-				"label": "lenet2"
-			}
-		},
-		{
 			"type": "testing",
 			"testing": {
 				"network": "lenet2",

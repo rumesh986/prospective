@@ -1,5 +1,5 @@
 results/*
-results_old/*
+results_old*
 tests/*
 
 *.o

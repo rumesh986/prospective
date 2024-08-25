@@ -67,13 +67,18 @@ int main(int argc, char **argv) {
 			set_network(train_params->net);
 			char netname[512];
 			sprintf(netname, "%s/%s.net", results_dir, config.operations[i].label);
-			save_network(netname);
-			struct traindata *train_data = train(*train_params, true);
+			if (train_params->amg.depth == 1) {
+				struct traindata *train_data = train(*train_params, true);
+				save_network(netname);
+				
+				char trainfile[512];
+				sprintf(trainfile, "%s/%s.traindata", results_dir, config.operations[i].label);
+				save_traindata(train_data, trainfile);
+				free_traindata(train_data);
+			} else {
+				struct traindata **train_data = train_amg(*train_params, true);
+			}
 
-			char trainfile[512];
-			sprintf(trainfile, "%s/%s.traindata", results_dir, config.operations[i].label);
-			save_traindata(train_data, trainfile);
-			free_traindata(train_data);
 
 		} else if (config.operations[i].type == op_testing) {
 			set_network(config.operations[i].testing.net);
