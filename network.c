@@ -35,7 +35,7 @@ struct block *_build_block(enum block_t type, size_t length, void *bdata);
 void _downscale_layer(gsl_vector *out, gsl_vector *in, size_t **indices);
 void _upscale_layer(gsl_vector *out, gsl_vector *in, size_t **indices);
 // size_t *_downsample_image(gsl_vector *out, gsl_vector *in);
-struct traindata *_train(struct training train, bool logging, int amg_depth, size_t num_samples, db_dataset *data_train, db_dataset *data_test, gsl_vector *test_label_vec, gsl_vector *test_cost_vec);
+void _train(struct training train, bool logging, int amg_depth, size_t num_samples, db_dataset *data_train, db_dataset *data_test, gsl_vector *test_label_vec, gsl_vector *test_cost_vec, struct traindata **ret);
 
 // main code
 
@@ -116,7 +116,7 @@ void set_network(struct network *net) {
 }
 
 void save_network(char *filename) {
-	FILE *file = fopen("network", "w");
+	FILE *file = fopen(filename, "w");
 	if (!file) {
 		printf("[Error] Unable to open file to save network (%s)\n", filename);
 		exit(ERR_FILE);
@@ -346,7 +346,7 @@ struct traindata *train(struct training train, bool logging) {
 				case block_layer:	_adjust_w_layer(cblock);	break;
 				case block_cnn:		_adjust_w_cnn(cblock);		break;
 			}
-		}
+		} 
 
 		if (train.test_samples_per_iters != 0) {
 			double train_cost = 0.0;
@@ -402,7 +402,8 @@ void save_traindata(struct traindata *data, char *filename) {
 
 	gsl_vector ***lenergies = malloc(sizeof(gsl_vector **) * data->num_samples);
 	gsl_vector ***deltax_mags = malloc(sizeof(gsl_vector **) * data->num_samples);
-	gsl_vector *delta_w_mags[_net.nlayers-1];
+	// gsl_vector *delta_w_mags[_net.nlayers-1];
+	gsl_vector **delta_w_mags = malloc(sizeof(gsl_vector *) * (_net.nlayers-1));
 
 	gsl_vector_view iter_counts = gsl_vector_view_array(data->iter_counts, data->num_samples);
 	gsl_vector_view train_costs = gsl_vector_view_array(data->train_costs, data->num_samples);
@@ -416,6 +417,7 @@ void save_traindata(struct traindata *data, char *filename) {
 	PLOOP(_net, cblock) {
 		deltaw_views[l] = gsl_vector_view_array(cblock->deltaw_mags, data->num_samples);
 		delta_w_mags[l] = &deltaw_views[l].vector;
+		print_vec(delta_w_mags[l], "deltawmags", false);
 		
 		l++;
 	}
@@ -449,7 +451,7 @@ void save_traindata(struct traindata *data, char *filename) {
 	}
 
 	save_data(SAVE_TYPE, size_dt, PS(SAVE_TRAIN), 0, 1, NULL, file);
-	save_data(SAVE_DELTAW_MAGS, double_dt, &delta_w_mags, 1, 1, PS(_net.nlayers-1), file);
+	save_data(SAVE_DELTAW_MAGS, double_dt, delta_w_mags, 1, 1, PS(_net.nlayers-1), file);
 	save_data(SAVE_ITER_COUNTS, double_dt, &iter_counts.vector, 1, 1, PS(1), file);
 	save_data(SAVE_LENERGIES, double_dt, lenergies, 1, 2, (size_t[]){data->num_samples, _net.nlayers-1}, file);
 	save_data(SAVE_COSTS, double_dt, &train_costs.vector, 1, 1, PS(1), file);
@@ -507,7 +509,7 @@ struct traindata **train_amg(struct training train, bool logging) {
 		test_cost_vec = gsl_vector_calloc(_net.ntargets);
 	}
 
-	_train(train, logging, 0, num_samples, data_train, data_test, test_label_vec, test_cost_vec);
+	_train(train, _logging, 0, num_samples, data_train, data_test, test_label_vec, test_cost_vec, ret);
 
 	// for (int amg_depth = 0; amg_depth < train.amg.depth; amg_depth++) {
 	// 	// do multigrid
@@ -539,11 +541,11 @@ struct traindata **train_amg(struct training train, bool logging) {
 	return ret;
 }
 
-struct traindata *_train(struct training train, bool logging, int amg_depth, size_t num_samples, db_dataset *data_train, db_dataset *data_test, gsl_vector *test_label_vec, gsl_vector *test_cost_vec) {
+void _train(struct training train, bool logging, int amg_depth, size_t num_samples, db_dataset *data_train, db_dataset *data_test, gsl_vector *test_label_vec, gsl_vector *test_cost_vec, struct traindata **results) {
 
 	if (amg_depth == train.amg.depth) {
 		printf("Hit depth limit\n");
-		return NULL;
+		return;
 	}
 
 	if (amg_depth != 0) {
@@ -553,13 +555,14 @@ struct traindata *_train(struct training train, bool logging, int amg_depth, siz
 	}
 
 	if (amg_depth < train.amg.depth-1) {
-
-		_train(train, logging, amg_depth+1, num_samples, data_train, data_test, test_label_vec, test_cost_vec);
+		_train(train, _logging, amg_depth+1, num_samples, data_train, data_test, test_label_vec, test_cost_vec, results);
 	}
 	
 	printf("Preparing to train at depth %d\n", amg_depth);
 
-	struct traindata *ret = malloc(sizeof(struct traindata));
+	// results[amg_depth] = NULL;
+	struct traindata *ret = NULL;
+	//  malloc(sizeof(struct traindata));
 
 	if (_logging) {
 		ret = malloc(sizeof(struct traindata));
@@ -629,7 +632,7 @@ struct traindata *_train(struct training train, bool logging, int amg_depth, siz
 		
 		_net.lenergy_chunks = 0;
 	}
-	printf("Completed training at depth %d\n", amg_depth);
+	printf("Completed relaxing at depth %d\n", amg_depth);
 
 	if (amg_depth > 0) {
 		set_network(train.amg.nets[amg_depth-1]);
@@ -648,7 +651,8 @@ struct traindata *_train(struct training train, bool logging, int amg_depth, siz
 	}
 
 
-	return ret;
+	results[amg_depth] = ret;
+	// return ret;
 }
 
 void clear_block_data() {
@@ -912,11 +916,11 @@ int _relaxation(bool training) {
 
 	// reset layers, epsilons and deltax hidden layers
 	struct block *cblock;
-	HLOOP(_net, cblock) {
-		gsl_vector_set_zero(cblock->layer);
-		gsl_vector_set_zero(cblock->epsilon);
-		gsl_vector_set_zero(cblock->deltax);
-	}
+	// HLOOP(_net, cblock) {
+	// 	gsl_vector_set_zero(cblock->layer);
+	// 	gsl_vector_set_zero(cblock->epsilon);
+	// 	gsl_vector_set_zero(cblock->deltax);
+	// }
 
 	double prev_energy = 1e30;
 	double energy;
@@ -1130,8 +1134,10 @@ void _adjust_w_layer(struct block *ablock) {
 	gsl_blas_dger(_net.alpha, ablock->epsilon, ablock->prev->tlayer, ablock->deltaw);
 	gsl_matrix_add(ablock->weights, ablock->deltaw);
 
+	printf("DeltaW mag %.10f\n", frobenius_norm(ablock->deltaw));
+
 	if (_logging)
-		ablock->deltaw_mags[_sample_i] = frobenius_norm(ablock->deltaw);
+		ablock->deltaw_mags[0] = frobenius_norm(ablock->deltaw);
 
 }
 
@@ -1154,8 +1160,10 @@ void _adjust_w_cnn(struct block *ablock) {
 	gsl_matrix_scale(ablock->deltaw, _net.alpha);
 	gsl_matrix_add(ablock->weights, ablock->deltaw);
 
+	printf("DeltaW mag %.10f\n", frobenius_norm(ablock->deltaw));
+
 	if (_logging)
-		ablock->deltaw_mags[_sample_i] = frobenius_norm(ablock->deltaw);
+		ablock->deltaw_mags[0] = frobenius_norm(ablock->deltaw);
 }
 
 double _calc_energies(int iter) {
@@ -1292,14 +1300,41 @@ void _downscale_layer(gsl_vector *out, gsl_vector *in, size_t **indices) {
 
 // update this later with interpolation
 void _upscale_layer(gsl_vector *out, gsl_vector *in, size_t **indices) {
-	// gsl_matrix_view imview = gsl_matrix_view_vector(in, sqrt(in->size), sqrt(in->size));
-	// gsl_matrix_view omview = gsl_matrix_view_vector(out, sqrt(out->size), sqrt(out->size));
+	gsl_matrix_view imview = gsl_matrix_view_vector(in, sqrt(in->size), sqrt(in->size));
+	gsl_matrix_view omview = gsl_matrix_view_vector(out, sqrt(out->size), sqrt(out->size));
+
+
+	size_t out_size = sqrt(out->size);
+
+	gsl_matrix *padded = gsl_matrix_calloc(out_size+2, out_size+2);
+	gsl_matrix_view pmview = gsl_matrix_submatrix(padded, 1, 1, out_size, out_size);
+	gsl_matrix_memcpy(&pmview.matrix, &omview.matrix);
+
+	for (int i = 0; i < in->size; i++)
+		gsl_vector_set(out, indices[i][0], gsl_vector_get(in, i));
 
 	for (int i = 0; i < in->size; i++) {
-		gsl_vector_set(out, indices[i][0], gsl_vector_get(in, i));
+		size_t oi = indices[i][1] / out_size + 1;
+		size_t oj = indices[i][1] % out_size + 1;
+		double newval = gsl_matrix_get(padded, oi, oj-1) + gsl_matrix_get(padded, oi, oj+1);
+		gsl_matrix_set(&omview.matrix, oi-1, oj-1, 0.5 * newval);
+
+		oi = indices[i][2] / out_size + 1;
+		oj = indices[i][2] % out_size + 1;
+		newval = gsl_matrix_get(padded, oi-1, oj) + gsl_matrix_get(padded, oi+1, oj);
+		gsl_matrix_set(&omview.matrix, oi-1, oj-1, 0.5 * newval);
+	}
+	
+	for (int i = 0; i < in->size; i++) {
+		size_t oi = indices[i][3] / out_size + 1;
+		size_t oj = indices[i][3] % out_size + 1;
+		double newval = gsl_matrix_get(padded, oi, oj-1) + gsl_matrix_get(padded, oi-1, oj) + gsl_matrix_get(padded, oi, oj+1) + gsl_matrix_get(padded, oi+1, oj);
+		gsl_matrix_set(&omview.matrix, oi-1, oj-1, 0.25 * newval);
+
+
 		// gsl_vector_set(out, indices[i][1], (gsl_vector_get(in, i )));
-		for (int j = 0; j < 4; j++)
-			gsl_vector_set(out, indices[i][j], gsl_vector_get(in, i));
+		// for (int j = 0; j < 4; j++)
+			// gsl_vector_set(out, indices[i][j], gsl_vector_get(in, i));
 	}
 
 }
@@ -1365,7 +1400,6 @@ void _build_coarse_net(struct network *net) {
 			cdata->nmats = cdata->nchannels * (cblock->prev->type == block_cnn ? cblock->prev->cnn->nchannels : 1);
 
 			size_t newlen = floor(cblock->cnn->image_size/2) * floor(cblock->cnn->image_size/2);
-			printf("newlen = %ld\n", newlen);
 			// floor(sqrt(cblock->length / cdata->nchannels)/2) * floor(sqrt(cblock->length / cdata->nchannels)/2);
 
 			rblock->next = _build_block(block_cnn, newlen * cdata->nchannels, cdata);

@@ -69,7 +69,7 @@ int main(int argc, char **argv) {
 			sprintf(netname, "%s/%s.net", results_dir, config.operations[i].label);
 			if (train_params->amg.depth == 1) {
 				struct traindata *train_data = train(*train_params, true);
-				save_network(netname);
+				// save_network(netname);
 				
 				char trainfile[512];
 				sprintf(trainfile, "%s/%s.traindata", results_dir, config.operations[i].label);
@@ -77,7 +77,15 @@ int main(int argc, char **argv) {
 				free_traindata(train_data);
 			} else {
 				struct traindata **train_data = train_amg(*train_params, true);
+				for (int j = 0; j < train_params->amg.depth; j++) {
+					char trainfile[512];
+					sprintf(trainfile, "%s/%s-%d.traindata", results_dir, config.operations[i].label, j);
+					save_traindata(train_data[j], trainfile);
+				}
 			}
+
+			printf("Saving network\n");
+			save_network(netname);
 
 
 		} else if (config.operations[i].type == op_testing) {
