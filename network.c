@@ -59,7 +59,7 @@ void init_network(struct network *net) {
 				cur_block->deltaw = NULL;
 			}
 		} else if (cur_block->type == block_cnn) {
-			size_t prev_img_size = sqrt(cur_block->prev->length);
+			size_t prev_img_size = sqrt(cur_block->prev->type == block_cnn ? cur_block->prev->cnn->image_length : cur_block->prev->length);
 			size_t prev_channels = cur_block->prev->type == block_cnn ? cur_block->prev->cnn->nchannels : 1;
 
 			cur_block->cnn->padded_input = malloc(sizeof(gsl_matrix *) * prev_channels);
@@ -417,7 +417,7 @@ void save_traindata(struct traindata *data, char *filename) {
 	PLOOP(_net, cblock) {
 		deltaw_views[l] = gsl_vector_view_array(cblock->deltaw_mags, data->num_samples);
 		delta_w_mags[l] = &deltaw_views[l].vector;
-		print_vec(delta_w_mags[l], "deltawmags", false);
+		// print_vec(delta_w_mags[l], "deltawmags", false);
 		
 		l++;
 	}
@@ -516,7 +516,12 @@ struct traindata **train_amg(struct training train, bool logging) {
 		
 	// }
 
+	// printf("returned to depth 0\n");
 	struct block *cblock;
+	// FLOOP(_net, cblock) {
+	// 	print_vec(cblock->layer, "", false);
+	// }
+
 	PLOOP(_net, cblock) {
 		switch (cblock->type) {
 			case block_layer:	_adjust_w_layer(cblock);	break;
@@ -555,7 +560,29 @@ void _train(struct training train, bool logging, int amg_depth, size_t num_sampl
 	}
 
 	if (amg_depth < train.amg.depth-1) {
+		struct block *cblock;
+		// PLOOP(_net, cblock)
+			// _prop_layer(cblock, false, true, true);
+
+		// printf("Vectors when moving from %d to %d\n", amg_depth, amg_depth+1);
+		// print_vec(_net.head->layer, "Head", false);
+		// FLOOP(_net, cblock)
+		// 	// print_vec(cblock->layer, "", false);
+		// 	print_img(cblock->layer, "");
 		_train(train, _logging, amg_depth+1, num_samples, data_train, data_test, test_label_vec, test_cost_vec, results);
+		// printf("Vectors on return from depth %d to %d\n", amg_depth+1, amg_depth);
+		// FLOOP(_net, cblock) {
+		// 	if (cblock->type == block_layer)
+		// 	// print_img(cblock->layer, "");
+		// 		print_vec(cblock->layer, "", false);
+		// 	else {
+		// 		for (int c = 0; c < cblock->cnn->nchannels; c++) {
+		// 			gsl_vector_view vview = gsl_vector_subvector(cblock->layer, c*cblock->cnn->image_length, cblock->cnn->image_length);
+		// 			print_img(&vview.vector, "");
+		// 		}
+		// 	}
+		// }
+
 	}
 	
 	printf("Preparing to train at depth %d\n", amg_depth);
@@ -641,7 +668,15 @@ void _train(struct training train, bool logging, int amg_depth, size_t num_sampl
 		struct block *cblock;
 		struct block *dblock = net->head;
 		PLOOP2(_net, cblock) {
-			_upscale_layer(cblock->layer, dblock->layer, dblock->amg_indices);
+			if (cblock->type == block_cnn) {
+				for (int c = 0; c < cblock->cnn->nchannels; c++) {
+					gsl_vector_view cvview = gsl_vector_subvector(cblock->layer, c*cblock->cnn->image_length, cblock->cnn->image_length);
+					gsl_vector_view dvview = gsl_vector_subvector(dblock->layer, c*dblock->cnn->image_length, dblock->cnn->image_length);
+
+					_upscale_layer(&cvview.vector, &dvview.vector, dblock->amg_indices+c*dblock->cnn->image_length);
+				}
+				// _upscale_layer(cblock->layer, dblock->layer, dblock->amg_indices);
+			}
 			dblock = dblock->next;
 		}
 
@@ -1069,11 +1104,18 @@ void _prop_layer(struct block *ablock, bool temp_input, bool temp_output, bool s
 			gsl_matrix_memcpy(&pad_view.matrix, &dmview.matrix);
 		}
 
+		// print_img(prev->tlayer, "layer");
+		// char title[256];
+		// for (int c2 = 0; c2 < prev_channels; c2++) {
+		// 	sprintf(title, "padded c2=%d", c2);
+		// 	print_mat(cnn->padded_input[c2], title, false);
+		// }
+
 		for (int c = 0; c < cnn->nchannels; c++) {
 			gsl_vector_set_zero(cnn->conv_layer);
 			gsl_matrix_view cview = gsl_matrix_view_vector(cnn->conv_layer, cnn->conv_size, cnn->conv_size);
 			if (store_gradients)
-				gsl_matrix_set_zero(cnn->dAdxP[c]);
+				gsl_matrix_set_zero(cnn->dAdxP[c]);			
 
 			for (int i = 0; i < cnn->conv_size; i++) {
 				for (int j = 0; j < cnn->conv_size; j++) {
@@ -1108,16 +1150,25 @@ void _prop_layer(struct block *ablock, bool temp_input, bool temp_output, bool s
 			// pooling, currently only does max pooling
 			gsl_vector_view ovview = gsl_vector_subvector(output, c*cnn->image_length, cnn->image_length);
 			gsl_matrix_view oview = gsl_matrix_view_vector(&ovview.vector, cnn->image_size, cnn->image_size);
-			for (int i = 0; i < cnn->image_size; i += cnn->pool_size) {
-				for (int j = 0; j < cnn->image_size; j += cnn->pool_size) {
-					gsl_matrix_view submat = gsl_matrix_submatrix(&cview.matrix, i, j, cnn->pool_size, cnn->pool_size);
+			// printf("c = %d/%ld\n", c, cnn->nchannels);
+			// printf("conv size = %ld, conv length = %ld\n", cnn->conv_size, cnn->conv_length);
+			// print_mat(&cview.matrix, "before pooling", false);
+			// print_mat(ablock->weights, "weights", false);
+			// for (int i = 0; i < cnn->image_size; i += cnn->pool_size) {
+				// for (int j = 0; j < cnn->image_size; j += cnn->pool_size) {
+			for (int i = 0; i < cnn->image_size; i++) {
+				for (int j = 0; j < cnn->image_size; j++) {
+					gsl_matrix_view submat = gsl_matrix_submatrix(&cview.matrix, i*cnn->pool_size, j*cnn->pool_size, cnn->pool_size, cnn->pool_size);
 					size_t maxi, maxj;
 					gsl_matrix_max_index(&submat.matrix, &maxi, &maxj);
 					gsl_vector_set(cnn->pool_indices, i*cnn->image_size+j, (i+maxi)*cnn->conv_size + (j+maxj));
 					gsl_matrix_set(&oview.matrix, i, j, gsl_matrix_get(&submat.matrix, maxi, maxj));
 				}
 			}
+			// print_mat(&oview.matrix, "after pooling", false);
 		}
+
+		// print_img(output, "final output");
 
 		for (int i = 0; i < prev_channels; i++)
 			gsl_matrix_free(padded_deriv[i]);
@@ -1337,6 +1388,9 @@ void _upscale_layer(gsl_vector *out, gsl_vector *in, size_t **indices) {
 			// gsl_vector_set(out, indices[i][j], gsl_vector_get(in, i));
 	}
 
+	// print_mat(&imview.matrix, "Original", false);
+	// print_mat(&omview.matrix, "upscaled", false);
+
 }
 
 void _build_coarse_net(struct network *net) {
@@ -1356,37 +1410,55 @@ void _build_coarse_net(struct network *net) {
 	net->head = NULL;
 	// net->tail = NULL;
 
-	struct block *rblock = NULL;
-	struct block *cblock;
-	FLOOP(_net, cblock) {
+	struct block_layer *ldata = malloc(sizeof(struct block_layer));
+	struct block *cblock = _net.head;
+	struct block *rblock = _build_block(block_layer, floor(sqrt(cblock->length)/2)*floor(sqrt(cblock->length)/2), ldata);
+
+	_downscale_layer(rblock->layer, cblock->layer, rblock->amg_indices);
+
+	net->head = rblock;
+
+	PLOOP(_net, cblock) {
 		if (cblock->type == block_layer) {
-			printf(" block layer size %ld\n", sizeof(struct block_layer));
-			struct block_layer *trial = malloc(2);
-			struct block_layer *ldata = malloc(sizeof(struct block_layer));
-			struct block *newblock =  _build_block(block_layer, cblock->next ? floor(sqrt(cblock->length)/2)*floor(sqrt(cblock->length)/2) : cblock->length, ldata);
-			// struct block *newblock =  _build_block(block_layer, cblock->length, ldata);
 
-			if (cblock->next)
-				_downscale_layer(newblock->layer, cblock->layer, newblock->amg_indices);
-			// gsl_vector_memcpy(newblock->layer, cblock->layer);
+			ldata = malloc(sizeof(struct block_layer));
+			rblock->next = _build_block(block_layer, cblock->length, ldata);
+			rblock->next->prev = rblock;
+			rblock = rblock->next;
 
-			if (rblock) {
-				rblock->next = newblock;
-				rblock->next->prev = rblock;
-				rblock = rblock->next;
+			gsl_vector_memcpy(rblock->layer, cblock->layer);
+			rblock->weights = gsl_matrix_calloc(cblock->weights->size1, rblock->prev->length);
+			// gsl_matrix_memcpy(rblock->weights, cblock->weights);
 
-				rblock->weights = gsl_matrix_calloc(rblock->length, rblock->prev->length);
-
-				for (int i = 0; i < rblock->weights->size1; i++) {
-					for (int j = 0; j < rblock->weights->size2; j++) {
-						double weight = gsl_matrix_get(cblock->weights, cblock->next ? rblock->amg_indices[i][0] : i, rblock->prev->amg_indices[j][0]);
-						gsl_matrix_set(rblock->weights, i, j, weight);
-					}
-				}
-			} else {
-				net->head = newblock;
-				rblock = net->head;
+			for (int i = 0; i < rblock->prev->length; i++) {
+				gsl_vector_view ccol = gsl_matrix_column(cblock->weights, rblock->prev->amg_indices[i][0]);
+				gsl_matrix_set_col(rblock->weights, i, &ccol.vector);
 			}
+		// 	printf(" block layer size %ld\n", sizeof(struct block_layer));
+		// 	struct block *newblock =  _build_block(block_layer, cblock->next ? floor(sqrt(cblock->length)/2)*floor(sqrt(cblock->length)/2) : cblock->length, ldata);
+		// 	// struct block *newblock =  _build_block(block_layer, cblock->length, ldata);
+
+		// 	if (cblock->next)
+		// 		_downscale_layer(newblock->layer, cblock->layer, newblock->amg_indices);
+		// 	// gsl_vector_memcpy(newblock->layer, cblock->layer);
+
+		// 	if (rblock) {
+		// 		rblock->next = newblock;
+		// 		rblock->next->prev = rblock;
+		// 		rblock = rblock->next;
+
+		// 		rblock->weights = gsl_matrix_calloc(rblock->length, rblock->prev->length);
+
+		// 		for (int i = 0; i < rblock->weights->size1; i++) {
+		// 			for (int j = 0; j < rblock->weights->size2; j++) {
+		// 				double weight = gsl_matrix_get(cblock->weights, cblock->next ? rblock->amg_indices[i][0] : i, rblock->prev->amg_indices[j][0]);
+		// 				gsl_matrix_set(rblock->weights, i, j, weight);
+		// 			}
+		// 		}
+		// 	} else {
+		// 		net->head = newblock;
+		// 		rblock = net->head;
+		// 	}
 
 		} else if (cblock->type == block_cnn) {
 			struct block_cnn *cdata = malloc(sizeof(struct block_cnn));

@@ -23,21 +23,30 @@ void print_vec(gsl_vector *vec, char *title, bool print_index) {
 		printf("\n");
 	}
 	printf("| ");
-	for (int i = 0; i< vec->size; i++)
-		printf("%.5f ", gsl_vector_get(vec, i));
+	for (int i = 0; i< vec->size; i++) {
+		double val = gsl_vector_get(vec, i);
+		if (val == 0.0)
+			printf("    ");
+		else 	
+			printf("%.3f ", val);
+	}
+
+		// printf("%.3f ", gsl_vector_get(vec, i));
 	printf("|\n");
 }
 
 void print_img(gsl_vector *vec, char *title) {
 	printf("########### %s ###########\n", title);
-	for (int i = 0; i < 28; i++) {
-		for (int j = 0; j < 28; j++) {
-			double val = gsl_vector_get(vec, 28*i + j);
-			printf("%s", val == 0.0 ? " " : ".");
-			// if (val == 0.0)
-			// 	printf("    ");
-			// else
-			// 	printf("%.3f ", val);
+	size_t len = floor(sqrt(vec->size));
+	printf("%ld %ld\n", vec->size, len);
+	for (int i = 0; i < len; i++) {
+		for (int j = 0; j < len; j++) {
+			double val = gsl_vector_get(vec, len*i + j);
+			// printf("%s", val == 0.0 ? " " : ".");
+			if (val == 0.0)
+				printf("    ");
+			else
+				printf("%.3f ", val);
 		}
 		printf("\n");
 	}
@@ -56,8 +65,14 @@ void print_mat(gsl_matrix *mat, char *title, bool print_index) {
 			printf("[%3d] ", i);
 		
 		printf("| ");
-		for (int j = 0; j < mat->size2; j++) 
-			printf(" %.1f ", gsl_matrix_get(mat, i, j));
+		for (int j = 0; j < mat->size2; j++) {
+			double val = gsl_matrix_get(mat, i, j);
+			if (val == 0.0)
+				printf("    ");
+			else
+				printf(" %.1f ", val);
+		}
+			// printf(" %.1f ", gsl_matrix_get(mat, i, j));
 		printf("|\n");
 	}
 }
