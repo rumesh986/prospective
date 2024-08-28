@@ -100,6 +100,7 @@ struct block_cnn {
 	gsl_matrix **dAdxP;
 	gsl_matrix *dAdx;
 	gsl_matrix **dAdw;
+	gsl_matrix *dAdwF;
 };
 
 struct amg {

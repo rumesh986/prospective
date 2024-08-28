@@ -518,9 +518,10 @@ struct traindata **train_amg(struct training train, bool logging) {
 
 	// printf("returned to depth 0\n");
 	struct block *cblock;
-	// FLOOP(_net, cblock) {
-	// 	print_vec(cblock->layer, "", false);
-	// }
+	PLOOP(_net, cblock) {
+		// print_vec(cblock->layer, "", false);
+		_prop_layer(cblock, false, false, true);
+	}
 
 	PLOOP(_net, cblock) {
 		switch (cblock->type) {
@@ -969,7 +970,7 @@ int _relaxation(bool training) {
 		// calculate epsilon
 		PLOOP(_net, cblock) {
 			gsl_vector_memcpy(cblock->epsilon, cblock->layer);
-			_prop_layer(cblock, false, true, true);
+			_prop_layer(cblock, false, true, false);
 			gsl_vector_sub(cblock->epsilon, cblock->tlayer);
 		}
 
@@ -1166,6 +1167,21 @@ void _prop_layer(struct block *ablock, bool temp_input, bool temp_output, bool s
 				}
 			}
 			// print_mat(&oview.matrix, "after pooling", false);
+
+			// should be possible to change dadw to have prev_channels matrices instead
+			// the c part is reused anyway
+
+			if (store_gradients && ablock->deltaw) {
+				for (int c2 = 0; c2 < prev_channels; c2++) {
+					gsl_matrix_view dwview = gsl_matrix_submatrix(ablock->deltaw, 0, (c*prev_channels + c2)*ablock->cnn->kernel_size, ablock->cnn->kernel_size, ablock->cnn->kernel_size);
+					for (int i = 0; i < ablock->cnn->image_length; i++) {
+						size_t true_i = gsl_vector_get(ablock->cnn->pool_indices, i);
+						gsl_matrix_view dadw = gsl_matrix_submatrix(ablock->cnn->dAdw[c*prev_channels + c2], 0, true_i*ablock->cnn->kernel_size, ablock->cnn->kernel_size, ablock->cnn->kernel_size);
+						gsl_matrix_scale(&dadw.matrix, gsl_vector_get(ablock->epsilon, c*ablock->cnn->image_length + i));
+						gsl_matrix_add(&dwview.matrix, &dadw.matrix);
+					}
+				}
+			}
 		}
 
 		// print_img(output, "final output");
@@ -1193,20 +1209,20 @@ void _adjust_w_layer(struct block *ablock) {
 }
 
 void _adjust_w_cnn(struct block *ablock) {
-	double mag = 0;
-	size_t prev_channels = ablock->prev->type == block_cnn ? ablock->prev->cnn->nchannels : 1;
-	gsl_matrix_set_zero(ablock->deltaw);
-	for (int c1 = 0; c1 < ablock->cnn->nchannels; c1++) {
-		for (int c2 = 0; c2 < prev_channels; c2++) {
-			gsl_matrix_view dwview = gsl_matrix_submatrix(ablock->deltaw, 0, (c1*prev_channels + c2)*ablock->cnn->kernel_size, ablock->cnn->kernel_size, ablock->cnn->kernel_size);
-			for (int i = 0; i < ablock->cnn->image_length; i++) {
-				size_t true_i = gsl_vector_get(ablock->cnn->pool_indices, i);
-				gsl_matrix_view dadw = gsl_matrix_submatrix(ablock->cnn->dAdw[c1*prev_channels + c2], 0, true_i*ablock->cnn->kernel_size, ablock->cnn->kernel_size, ablock->cnn->kernel_size);
-				gsl_matrix_scale(&dadw.matrix, gsl_vector_get(ablock->epsilon, c1*ablock->cnn->image_length + i));
-				gsl_matrix_add(&dwview.matrix, &dadw.matrix);
-			}
-		}
-	}
+	// double mag = 0;
+	// size_t prev_channels = ablock->prev->type == block_cnn ? ablock->prev->cnn->nchannels : 1;
+	// gsl_matrix_set_zero(ablock->deltaw);
+	// for (int c1 = 0; c1 < ablock->cnn->nchannels; c1++) {
+	// 	for (int c2 = 0; c2 < prev_channels; c2++) {
+	// 		gsl_matrix_view dwview = gsl_matrix_submatrix(ablock->deltaw, 0, (c1*prev_channels + c2)*ablock->cnn->kernel_size, ablock->cnn->kernel_size, ablock->cnn->kernel_size);
+	// 		for (int i = 0; i < ablock->cnn->image_length; i++) {
+	// 			size_t true_i = gsl_vector_get(ablock->cnn->pool_indices, i);
+	// 			gsl_matrix_view dadw = gsl_matrix_submatrix(ablock->cnn->dAdw[c1*prev_channels + c2], 0, true_i*ablock->cnn->kernel_size, ablock->cnn->kernel_size, ablock->cnn->kernel_size);
+	// 			gsl_matrix_scale(&dadw.matrix, gsl_vector_get(ablock->epsilon, c1*ablock->cnn->image_length + i));
+	// 			gsl_matrix_add(&dwview.matrix, &dadw.matrix);
+	// 		}
+	// 	}
+	// }
 
 	gsl_matrix_scale(ablock->deltaw, _net.alpha);
 	gsl_matrix_add(ablock->weights, ablock->deltaw);

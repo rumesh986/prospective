@@ -113,7 +113,7 @@
 		},
 		{
 			"label": "lenet1",
-			"alpha": 0.05,
+			"alpha": 0.1,
 			"activation": "relu",
 			"weights": "xavier_uniform",
 			"processing": "normalized",
@@ -157,7 +157,7 @@
 		},
 		{
 			"label": "trial_relax",
-			"gamma": 0.1,
+			"gamma": 0.01,
 			"gamma_rate": 0.5,
 			"gamma_count": 2,
 			"energy_residual": 1e-40,
@@ -173,10 +173,10 @@
 				"train_samples": 100,
 				"seed": 0,
 				"test_samples_per_iter": 10,
-				"relaxation": "default_relaxation",
+				"relaxation": "trial_relax",
 				"save": true,
 				"multigrid": {
-					"depth": 1
+					"depth": 3
 				}
 			}
 		},
