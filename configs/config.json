@@ -170,7 +170,7 @@
 			"training": {
 				"label": "lenet1",
 				"network": "lenet1",
-				"train_samples": 100,
+				"train_samples": 1000,
 				"seed": 0,
 				"test_samples_per_iter": 10,
 				"relaxation": "trial_relax",
