@@ -69,7 +69,6 @@ int main(int argc, char **argv) {
 			sprintf(netname, "%s/%s.net", results_dir, config.operations[i].label);
 
 			time_t start = clock();
-
 			if (train_params->amg.depth == 1) {
 				struct traindata *train_data = train(*train_params, true);
 				// save_network(netname);
@@ -87,12 +86,21 @@ int main(int argc, char **argv) {
 				}
 			}
 
-			time_t end = clock();
 
-			printf("\n\nTime to train: %ld seconds\n\n", (end-start)/CLOCKS_PER_SEC);
 
 			printf("Saving network\n");
 			save_network(netname);
+
+			time_t end = clock();
+			printf("\n\nTime to train: %ld seconds\n\n", (end-start)/CLOCKS_PER_SEC);
+
+			char timefile[512];
+			sprintf(timefile, "%s/%s-%ld", results_dir, config.operations[i].label, train_params->amg.depth);
+			FILE *timef = fopen(timefile, "w");
+			char text[64];
+			sprintf(text, "%f\n", (double)(end-start)/(double)CLOCKS_PER_SEC);
+			fwrite(text, sizeof(char), strlen(text), timef);
+			fclose(timef);
 
 
 		} else if (config.operations[i].type == op_testing) {
@@ -107,7 +115,6 @@ int main(int argc, char **argv) {
 			load_network(config.operations[i].load);
 			set_network(config.operations[i].load.net);
 		}
-
 	}
 
 	char conf_save_file[512];

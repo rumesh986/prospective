@@ -2,8 +2,8 @@
 	"general": {
 		"logging": true,
 		"database": "mnist",
-		"label": "mlp3 d3",
-		"results_dir": "tests/amg_time"
+		"label": "mlp2 10000",
+		"results_dir": "tests/amg"
 	},
 	"blocks": [
 		{
@@ -23,64 +23,15 @@
 		{
 			"type": "layer",
 			"layer": {
+				"label": "layer_300",
+				"length": 300
+			}
+		},
+		{
+			"type": "layer",
+			"layer": {
 				"label": "layer_84",
 				"length": 84
-			}
-		},
-		{
-			"type": "cnn",
-			"cnn": {
-				"label": "cnn_k5_s1_p2_c3",
-				"kernel_size": 5,
-				"stride": 1,
-				"padding": 2,
-				"nchannels": 3,
-				"pool": {
-					"type": "max",
-					"size": 2
-				}
-			}
-		},
-		{
-			"type": "cnn",
-			"cnn": {
-				"label": "cnn_k5_s1_p0_c4",
-				"kernel_size": 5,
-				"stride": 1,
-				"padding": 0,
-				"nchannels": 4,
-				"pool": {
-					"type": "max",
-					"size": 2
-				}
-			}
-		},
-		{
-			"type": "cnn",
-			"cnn": {
-				"label": "cnn_k5_s1_p2_c6",
-				"kernel_size": 5,
-				"stride": 1,
-				"padding": 2,
-				"nchannels": 6,
-				"pool": {
-					"type": "max",
-					"size": 2
-				}
-			}
-		},
-		{
-			"type": "cnn",
-			"cnn": {
-				"label": "cnn_k5_s1_p0_c16",
-				"kernel_size": 5,
-				"stride": 1,
-				"padding": 0,
-				"nchannels": 16,
-				"pool": {
-					"type": "max",
-					"size": 2
-				}
 			}
 		}
 	],
@@ -104,38 +55,11 @@
 			"weights": "xavier_uniform",
 			"processing": "normalized",
 			"blocks": [
-				"layer_120",
+				"layer_300",
+				"layer_300",
 				"layer_120"
 			],
 			"targets": null
-		},
-		{
-			"label": "cnn_network1",
-			"alpha": 0.1,
-			"activation": "relu",
-			"weights": "xavier_uniform",
-			"processing": "normalized",
-			"blocks": [
-				"cnn_k5_s1_p2_c3",
-				"cnn_k5_s1_p0_c4",
-				"layer_120",
-				"layer_84"
-			],
-			"targets": [1,8]
-		},
-		{
-			"label": "lenet1",
-			"alpha": 0.01,
-			"activation": "relu",
-			"weights": "xavier_uniform",
-			"processing": "normalized",
-			"blocks": [
-				"cnn_k5_s1_p2_c6",
-				"cnn_k5_s1_p0_c16",
-				"layer_120",
-				"layer_84"
-			],
-			"targets": [1,8]
 		}
 	],
 	"relaxations": [
@@ -162,18 +86,56 @@
 			"gamma_count": 2,
 			"energy_residual": 1e-40,
 			"max_iterations": 4000
+		},
+		{
+			"label": "amg_relax",
+			"gamma": 0.1,
+			"gamma_rate": 0.5,
+			"gamma_count": 2,
+			"energy_residual": 1e-16,
+			"max_iterations": 1000
 		}
 	],
 	"operations": [
 		{
 			"type": "training",
 			"training": {
-				"label": "mlp_network2",
+				"label": "mlp2_1",
 				"network": "mlp_network2",
-				"train_samples": 1000,
-				"seed": 1725372745,
+				"train_samples": 10000,
+				"seed": 0,
 				"test_samples_per_iter": 1,
-				"relaxation": "default_relaxation",
+				"relaxation": "amg_relax",
+				"save": true,
+				"multigrid": {
+					"depth": 1
+				}
+			}
+		},
+		{
+			"type": "training",
+			"training": {
+				"label": "mlp2_2",
+				"network": "mlp_network2",
+				"train_samples": 10000,
+				"seed": 0,
+				"test_samples_per_iter": 1,
+				"relaxation": "amg_relax",
+				"save": true,
+				"multigrid": {
+					"depth": 2
+				}
+			}
+		},
+		{
+			"type": "training",
+			"training": {
+				"label": "mlp2_3",
+				"network": "mlp_network2",
+				"train_samples": 10000,
+				"seed": 0,
+				"test_samples_per_iter": 1,
+				"relaxation": "amg_relax",
 				"save": true,
 				"multigrid": {
 					"depth": 3
@@ -181,44 +143,54 @@
 			}
 		},
 		{
-			"type": "testing",
-			"testing": {
-				"network": "mlp_network2",
-				"num_samples": 1000,
-				"relaxation": null,
-				"label": "norelax"
-			}
-		}
-	],
-	"noperations": [
-		{
 			"type": "training",
 			"training": {
-				"label": "mlp_network1",
-				"network": "mlp_network1",
-				"train_samples": 1000,
+				"label": "mlp2_4",
+				"network": "mlp_network2",
+				"train_samples": 10000,
 				"seed": 0,
-				"test_samples_per_iter": 10,
-				"relaxation": "trial_relax",
-				"save": true
+				"test_samples_per_iter": 1,
+				"relaxation": "amg_relax",
+				"save": true,
+				"multigrid": {
+					"depth": 4
+				}
 			}
 		},
 		{
 			"type": "testing",
 			"testing": {
-				"network": "mlp_network1",
+				"network": "mlp2_1",
 				"num_samples": 1000,
 				"relaxation": null,
-				"label": "norelax"
+				"label": "mlp2_1"
 			}
 		},
 		{
 			"type": "testing",
 			"testing": {
-				"network": "mlp_network1",
+				"network": "mlp2_2",
 				"num_samples": 1000,
-				"relaxation": "default_relaxation",
-				"label": "relax"
+				"relaxation": null,
+				"label": "mlp2_2"
+			}
+		},
+		{
+			"type": "testing",
+			"testing": {
+				"network": "mlp2_3",
+				"num_samples": 1000,
+				"relaxation": null,
+				"label": "mlp2_3"
+			}
+		},
+		{
+			"type": "testing",
+			"testing": {
+				"network": "mlp2_4",
+				"num_samples": 1000,
+				"relaxation": null,
+				"label": "mlp2_4"
 			}
 		}
 	]
