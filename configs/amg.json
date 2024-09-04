@@ -2,8 +2,8 @@
 	"general": {
 		"logging": true,
 		"database": "mnist",
-		"label": "trial",
-		"results_dir": null
+		"label": "cnn d2 t2",
+		"results_dir": "tests/amg_time"
 	},
 	"blocks": [
 		{
@@ -161,8 +161,11 @@
 				"train_samples": 100,
 				"seed": 1725372745,
 				"test_samples_per_iter": 1,
-				"relaxation": "default_relaxation",
-				"save": true
+				"relaxation": "trial_relax",
+				"save": true,
+				"multigrid": {
+					"depth": 2
+				}
 			}
 		},
 		{

@@ -2,8 +2,8 @@
 	"general": {
 		"logging": true,
 		"database": "mnist",
-		"label": "trial",
-		"results_dir": null
+		"label": "mlp3 d3",
+		"results_dir": "tests/amg_time"
 	},
 	"blocks": [
 		{
@@ -98,6 +98,18 @@
 			"targets": [1,8]
 		},
 		{
+			"label": "mlp_network2",
+			"alpha": 0.1,
+			"activation": "sigmoid",
+			"weights": "xavier_uniform",
+			"processing": "normalized",
+			"blocks": [
+				"layer_120",
+				"layer_120"
+			],
+			"targets": null
+		},
+		{
 			"label": "cnn_network1",
 			"alpha": 0.1,
 			"activation": "relu",
@@ -113,7 +125,7 @@
 		},
 		{
 			"label": "lenet1",
-			"alpha": 0.1,
+			"alpha": 0.01,
 			"activation": "relu",
 			"weights": "xavier_uniform",
 			"processing": "normalized",
@@ -156,20 +168,23 @@
 		{
 			"type": "training",
 			"training": {
-				"label": "lenet1",
-				"network": "lenet1",
-				"train_samples": 100,
+				"label": "mlp_network2",
+				"network": "mlp_network2",
+				"train_samples": 1000,
 				"seed": 1725372745,
 				"test_samples_per_iter": 1,
 				"relaxation": "default_relaxation",
-				"save": true
+				"save": true,
+				"multigrid": {
+					"depth": 3
+				}
 			}
 		},
 		{
 			"type": "testing",
 			"testing": {
-				"network": "lenet1",
-				"num_samples": 10,
+				"network": "mlp_network2",
+				"num_samples": 1000,
 				"relaxation": null,
 				"label": "norelax"
 			}

@@ -25,6 +25,9 @@ int _relaxation(bool training);
 void _adjust_eps();
 void _adjust_w_layer(struct block *ablock);
 void _adjust_w_cnn(struct block *ablock);
+void _accumulate_w_layer(struct block *ablock);
+void _accumulate_w_cnn(struct block *ablock);
+
 void _adjust_x_layer(struct block *ablock, int iter);
 void _adjust_x_cnn(struct block *ablock, int iter);
 void _free_block(struct block *ablock);
@@ -36,6 +39,10 @@ void _downscale_layer(gsl_vector *out, gsl_vector *in, size_t **indices);
 void _upscale_layer(gsl_vector *out, gsl_vector *in, size_t **indices);
 // size_t *_downsample_image(gsl_vector *out, gsl_vector *in);
 void _train(struct training train, bool logging, int amg_depth, size_t num_samples, db_dataset *data_train, db_dataset *data_test, gsl_vector *test_label_vec, gsl_vector *test_cost_vec, struct traindata **ret);
+
+
+void _train2(struct training train, bool logging, size_t num_samples, db_dataset *data_train, db_dataset *data_test, gsl_vector *test_label_vec, gsl_vector *test_cost_vec, struct traindata **results);
+int _relaxation2(bool training, gsl_vector *inp, int target, int depth, int max_depth, struct network **nets);
 
 // main code
 
@@ -111,7 +118,7 @@ void init_network(struct network *net) {
 }
 
 void set_network(struct network *net) {
-	printf("\n\nChanging net to %p\n\n", net);
+	// printf("\n\nChanging net to %p\n\n", net);
 	_net = *net;
 }
 
@@ -379,6 +386,14 @@ struct traindata *train(struct training train, bool logging) {
 
 	}
 
+	// struct block *cblock;
+	// PLOOP(_net, cblock) {
+	// 	if (cblock->type == block_cnn)
+	// 		gsl_matrix_scale(cblock->deltaw, _net.alpha);
+		
+	// 	gsl_matrix_add(cblock->weights, cblock->deltaw);
+	// }
+
 	printf("Completed training, freeing datasets\n");
 	for (int i = 0; i < _net.ntargets; i++) {
 		db_free_dataset(data_train[i]);
@@ -417,7 +432,7 @@ void save_traindata(struct traindata *data, char *filename) {
 	PLOOP(_net, cblock) {
 		deltaw_views[l] = gsl_vector_view_array(cblock->deltaw_mags, data->num_samples);
 		delta_w_mags[l] = &deltaw_views[l].vector;
-		print_vec(delta_w_mags[l], "deltawmags", false);
+		// print_vec(delta_w_mags[l], "deltawmags", false);
 		
 		l++;
 	}
@@ -492,11 +507,14 @@ struct traindata **train_amg(struct training train, bool logging) {
 
 		if (data_train[i].count < max_count)
 			max_count = data_train[i].count;
+
+		printf("data train label: %d\n", data_train[i].label);
 	}
 
 	size_t num_samples = train.num_samples;
-	if (num_samples == 0)
+	if (num_samples == 0)		
 		num_samples = max_count * _net.ntargets;
+	
 	
 	struct traindata **ret = NULL;
 	if (logging)
@@ -509,20 +527,23 @@ struct traindata **train_amg(struct training train, bool logging) {
 		test_cost_vec = gsl_vector_calloc(_net.ntargets);
 	}
 
-	_train(train, _logging, 0, num_samples, data_train, data_test, test_label_vec, test_cost_vec, ret);
-
+	// _train(train, _logging, 0, num_samples, data_train, data_test, test_label_vec, test_cost_vec, ret);
+	_train2(train, _logging, num_samples, data_train, data_test, test_label_vec, test_cost_vec, ret);
 	// for (int amg_depth = 0; amg_depth < train.amg.depth; amg_depth++) {
 	// 	// do multigrid
 		
 	// }
 
-	struct block *cblock;
-	PLOOP(_net, cblock) {
-		switch (cblock->type) {
-			case block_layer:	_adjust_w_layer(cblock);	break;
-			case block_cnn:		_adjust_w_cnn(cblock);		break;
-		}
-	}
+	printf("\n\nALPHA  = %f\n\n", _net.alpha);
+	// struct block *cblock;
+	// PLOOP(_net, cblock) {
+	// 	if (cblock->type == block_cnn)
+	// 		gsl_matrix_scale(cblock->deltaw, _net.alpha);
+		
+	// 	gsl_matrix_scale(cblock->deltaw, ((double)1/(double)num_samples));
+	// 	gsl_matrix_add(cblock->weights, cblock->deltaw);
+	// 	printf("Final Deltaw mag: %f\n", frobenius_norm(cblock->deltaw));
+	// }
 
 	printf("Completed training network, freeing datasets...\n");
 
@@ -592,7 +613,9 @@ void _train(struct training train, bool logging, int amg_depth, size_t num_sampl
 		
 		if (amg_depth > 0)
 			_downscale_layer(_net.head->layer, data_train[cur_target].images[target_counter], _net.head->amg_indices);
-		// gsl_vector_memcpy(_net.head->layer, data_train[cur_target].images[targ])
+		else
+			gsl_vector_memcpy(_net.head->layer, data_train[cur_target].images[target_counter]);
+
 		gsl_vector_set_basis(_net.tail->layer, cur_target);
 
 		struct block *cblock;
@@ -604,6 +627,24 @@ void _train(struct training train, bool logging, int amg_depth, size_t num_sampl
 		}
 
 		int iters = _relaxation(true);
+
+		// if (amg_depth == 0) {
+		// 	PLOOP(_net, cblock) {
+		// 		switch (cblock->type) {
+		// 			case block_layer:	_accumulate_w_layer(cblock);	break;
+		// 			case block_cnn:		_accumulate_w_cnn(cblock);		break;
+		// 		}
+		// 	}
+		// }
+
+		if (amg_depth == 0) {
+			PLOOP(_net, cblock) {
+				switch (cblock->type) {
+					case block_layer:	_adjust_w_layer(cblock);	break;
+					case block_cnn:		_adjust_w_cnn(cblock);		break;
+				}
+			}
+		}
 
 		// if (train.test_samples_per_iters != 0) {
 		// 	double train_cost = 0.0;
@@ -639,8 +680,8 @@ void _train(struct training train, bool logging, int amg_depth, size_t num_sampl
 		struct network *net = train.amg.nets[amg_depth];
 
 		struct block *cblock;
-		struct block *dblock = net->head;
-		PLOOP2(_net, cblock) {
+		struct block *dblock = net->head->next;
+		HLOOP(_net, cblock) {
 			_upscale_layer(cblock->layer, dblock->layer, dblock->amg_indices);
 			dblock = dblock->next;
 		}
@@ -653,6 +694,122 @@ void _train(struct training train, bool logging, int amg_depth, size_t num_sampl
 
 	results[amg_depth] = ret;
 	// return ret;
+}
+
+void _train2(struct training train, bool logging, size_t num_samples, db_dataset *data_train, db_dataset *data_test, gsl_vector *test_label_vec, gsl_vector *test_cost_vec, struct traindata **results) {
+	for (int i = 1; i < train.amg.depth; i++) {
+		struct network *net = train.amg.nets[i];
+		_build_coarse_net(net);
+		set_network(net);
+	}
+
+	if (logging) {
+		for (int i = 0; i < train.amg.depth; i++) {
+			set_network(train.amg.nets[i]);
+
+			struct block *cblock;
+			FLOOP(_net, cblock) {
+				cblock->deltaw_mags = malloc(sizeof(double) * num_samples);
+				cblock->deltax_mags = malloc(sizeof(double *) * num_samples);
+				cblock->energies = malloc(sizeof(double *) * num_samples);
+				cblock->nenergies = num_samples;
+				for (int i = 0; i < num_samples; i++) {
+					cblock->energies[i] = NULL;
+					cblock->deltax_mags[i] = NULL;
+				}
+			}
+		}
+	}
+
+	set_network(train.amg.nets[0]);
+
+	struct traindata *ret = NULL;
+
+	if (_logging) {
+		ret = malloc(sizeof(struct traindata));
+		ret->iter_counts = malloc(sizeof(size_t) * num_samples);
+		ret->train_costs = malloc(sizeof(double) * num_samples);
+		ret->num_samples = num_samples;
+
+		struct block *cblock;
+		FLOOP(_net, cblock) {
+			cblock->deltaw_mags = malloc(sizeof(double) * num_samples);
+			cblock->deltax_mags = malloc(sizeof(double *) * num_samples);
+			cblock->energies = malloc(sizeof(double *) * num_samples);
+			cblock->nenergies = num_samples;
+			for (int i = 0; i < num_samples; i++) {
+				cblock->energies[i] = NULL;
+				cblock->deltax_mags[i] = NULL;
+			}
+		}
+	}
+
+	int target_counter = -1;
+	printf("Training on %ld images at depth %d\n", num_samples, 0);
+	for (_sample_i = 0; _sample_i < num_samples; _sample_i++) {
+		int cur_target = _sample_i % _net.ntargets;
+		if (cur_target == 0)
+			target_counter++;
+		
+		gsl_vector_set_basis(_net.tail->layer, cur_target);
+
+		struct block *cblock;
+		HLOOP(_net, cblock) {
+			if (cblock->type == block_cnn) {
+				for (int c = 0; c < cblock->cnn->nmats; c++)
+					gsl_matrix_set_zero(cblock->cnn->dAdw[c]);
+			}
+		}
+
+		int iters = _relaxation2(true, data_train[cur_target].images[target_counter], cur_target, 0, train.amg.depth, train.amg.nets);
+
+		// if (amg_depth == 0) {
+		// 	PLOOP(_net, cblock) {
+		// 		switch (cblock->type) {
+		// 			case block_layer:	_accumulate_w_layer(cblock);	break;
+		// 			case block_cnn:		_accumulate_w_cnn(cblock);		break;
+		// 		}
+		// 	}
+		// }
+
+		// if (amg_depth == 0) {
+			PLOOP(_net, cblock) {
+				switch (cblock->type) {
+					case block_layer:	_adjust_w_layer(cblock);	break;
+					case block_cnn:		_adjust_w_cnn(cblock);		break;
+				}
+			}
+		// }
+
+		// if (train.test_samples_per_iters != 0) {
+		// 	double train_cost = 0.0;
+			
+		// 	for (int test_i = 0; test_i < train.test_samples_per_iters; test_i++) {
+		// 		_downsample_image(_net.head->tlayer, data_test[test_i % _net.ntargets].images[test_i], NULL);
+		// 		gsl_vector_set_zero(_net.tail->tlayer);
+		// 		gsl_vector_set_basis(test_label_vec, test_i % _net.ntargets);
+
+		// 		PLOOP(_net, cblock) {
+		// 			_prop_layer(cblock, true, true, false);
+		// 		}
+
+		// 		gsl_vector_memcpy(test_cost_vec, _net.tail->tlayer);
+		// 		gsl_vector_sub(test_cost_vec, test_label_vec);
+
+		// 		train_cost += gsl_blas_dnrm2(test_cost_vec);
+		// 	}
+
+		// 	train_cost /= (double)train.test_samples_per_iters;
+		// 	ret->train_costs[_sample_i] = train_cost;
+		// }
+
+		if (_logging)
+			ret->iter_counts[_sample_i] = iters;
+		
+		_net.lenergy_chunks = 0;
+	}
+
+	results[0] = ret;
 }
 
 void clear_block_data() {
@@ -916,11 +1073,11 @@ int _relaxation(bool training) {
 
 	// reset layers, epsilons and deltax hidden layers
 	struct block *cblock;
-	// HLOOP(_net, cblock) {
-	// 	gsl_vector_set_zero(cblock->layer);
-	// 	gsl_vector_set_zero(cblock->epsilon);
-	// 	gsl_vector_set_zero(cblock->deltax);
-	// }
+	HLOOP(_net, cblock) {
+		// gsl_vector_set_zero(cblock->layer);
+		// gsl_vector_set_zero(cblock->epsilon);
+		gsl_vector_set_zero(cblock->deltax);
+	}
 
 	double prev_energy = 1e30;
 	double energy;
@@ -1035,6 +1192,151 @@ int _relaxation(bool training) {
 	return iter;
 }
 
+int _relaxation2(bool training, gsl_vector *inp, int target, int depth, int max_depth, struct network **nets) {
+	set_network(nets[depth]);
+
+	if (depth < max_depth-1)
+		_relaxation2(training, inp, target, depth+1, max_depth, nets);
+
+	set_network(nets[depth]);
+	
+	if (depth != 0)
+		_downscale_layer(_net.head->layer, inp, _net.head->amg_indices);
+	else
+		gsl_vector_memcpy(_net.head->layer, inp);
+	
+	gsl_vector_set_basis(_net.tail->layer, target);
+	
+	struct block *cblock;
+	HLOOP(_net, cblock) {
+		// gsl_vector_set_zero(cblock->layer);
+		// gsl_vector_set_zero(cblock->epsilon);
+		gsl_vector_set_zero(cblock->deltax);
+	}
+
+	double prev_energy = 1e30;
+	double energy;
+	size_t gamma_count = _relax.gamma_count;
+	double gamma = _relax.gamma;
+
+	int iter = 0;
+	bool stop = false;
+
+	while (!stop) {
+		PLOOP(_net, cblock) {
+			gsl_vector_memcpy(cblock->epsilon, cblock->layer);
+			_prop_layer(cblock, false, true, true);
+			gsl_vector_sub(cblock->epsilon, cblock->tlayer);
+		}
+
+		HLOOP(_net, cblock) {
+			if (cblock->next->type == block_layer) {
+				activation_deriv_inplace(cblock->layer, cblock->tlayer, _net.act);
+				gsl_blas_dgemv(CblasTrans, gamma, cblock->next->weights, cblock->next->epsilon, 0.0, cblock->deltax);
+				gsl_vector_mul(cblock->deltax, cblock->tlayer);
+			} else if (cblock->next->type == block_cnn) {
+				int idx = 0;
+				for (int c = 0; c < cblock->next->cnn->nchannels; c++) {
+					for (int i = 0; i < cblock->next->cnn->image_length; i++) {
+						size_t true_i = gsl_vector_get(cblock->next->cnn->pool_indices, i);
+						gsl_vector_view row_view = gsl_matrix_row(cblock->next->cnn->dAdxP[c], true_i);
+
+						gsl_matrix_set_row(cblock->next->cnn->dAdx, idx, &row_view.vector);
+						idx++;
+					}
+				}
+
+				gsl_blas_dgemv(CblasTrans, gamma, cblock->next->cnn->dAdx, cblock->next->epsilon, 0.0, cblock->deltax);
+			}
+
+			gsl_blas_daxpy(-gamma, cblock->epsilon, cblock->deltax);
+			gsl_vector_add(cblock->layer, cblock->deltax);
+
+			if (iter > 0 && _logging)
+				cblock->deltax_mags[_sample_i][iter-1] = gsl_blas_dnrm2(cblock->deltax);
+		}
+
+		if (!training)
+			gsl_blas_daxpy(-gamma, _net.tail->epsilon, _net.tail->layer);
+		
+		// check stop
+		if (_relax.max_iters && iter > _relax.max_iters)
+			break;
+
+		if (_logging && (iter + 1) >= (_net.lenergy_chunks * CHUNK_SIZE)) {
+			_net.lenergy_chunks++;
+
+			struct block *cblock;
+			PLOOP(_net, cblock) {
+				double *new_ptr = realloc(cblock->energies[_sample_i], sizeof(double) * _net.lenergy_chunks * CHUNK_SIZE);
+				if (new_ptr) {
+					cblock->energies[_sample_i] = new_ptr;
+				} else {
+					printf("[Error] Failed to realloc lenergy data, expect errors\n");
+					break;
+				}
+			}
+
+			HLOOP(_net, cblock) {
+				double *new_ptr = realloc(cblock->deltax_mags[_sample_i], sizeof(double) * _net.lenergy_chunks * CHUNK_SIZE);
+				if (new_ptr) {
+					cblock->deltax_mags[_sample_i] = new_ptr;
+				} else {
+					printf("[Error] Failed to realloc deltax mags data, expect errors\n");
+					break;
+				}
+			}
+		}
+
+		energy = _calc_energies(iter);
+		double res = prev_energy - energy;
+		if (energy > 1e30) {
+			printf("WTF thats massive %d:  %e\n", iter, energy);
+			raise(SIGABRT);
+			exit(100);
+		}
+
+		if (_relax.energy_res &&  res < _relax.energy_res) {
+			if (res < 0) {
+				// printf("prev: %.60f\n", prev_energy);
+				// printf("curr: %.60f\n", energy);
+				// _print_lenergies(_net, iter-1);
+				// _print_lenergies(_net, iter);
+
+				if (gamma_count > 0) {
+					gamma *= _relax.gamma_rate;
+					gamma_count--;
+					// printf("Energy increasing, reducing gamma to %f\n", gamma);
+					iter++;
+					continue;
+				}
+
+			}
+			break;
+		}
+		// printf(" ");
+		// printf("[%5d] energy = %.30f, res = %.30f\n", iter, energy, res);
+		prev_energy = energy;
+
+		iter++;
+	}
+
+	if (depth > 0) {
+		// set_network(train.amg.nets[amg_depth-1]);
+		struct network *net = nets[depth-1];
+
+		struct block *cblock;
+		struct block *dblock = net->head->next;
+		HLOOP(_net, cblock) {
+			_upscale_layer(dblock->layer, cblock->layer, cblock->amg_indices);
+			dblock = dblock->next;
+		}
+	}
+
+	printf("[%5d][%d] Relaxation complete after %3d iterations with energy = %.30f\n", _sample_i, depth, iter, energy);
+	return iter;	
+}
+
 void _prop_layer(struct block *ablock, bool temp_input, bool temp_output, bool store_gradients) {
 	struct block *prev = ablock->prev;
 	gsl_vector *input = temp_input ? prev->tlayer : prev->layer;
@@ -1117,6 +1419,16 @@ void _prop_layer(struct block *ablock, bool temp_input, bool temp_output, bool s
 					gsl_matrix_set(&oview.matrix, i, j, gsl_matrix_get(&submat.matrix, maxi, maxj));
 				}
 			}
+
+			// for (int i = 0; i < cnn->image_size; i++) {
+			// 	for (int j = 0; j < cnn->image_size; j++) {
+			// 		gsl_matrix_view submat = gsl_matrix_submatrix(&cview.matrix, i*cnn->pool_size, j*cnn->pool_size, cnn->pool_size, cnn->pool_size);
+			// 		size_t maxi, maxj;
+			// 		gsl_matrix_max_index(&submat.matrix, &maxi, &maxj);
+			// 		gsl_vector_set(cnn->pool_indices, i*cnn->image_size+j, (i+maxi)*cnn->conv_size + (j+maxj));
+			// 		gsl_matrix_set(&oview.matrix, i, j, gsl_matrix_get(&submat.matrix, maxi, maxj));
+			// 	}
+			// }
 		}
 
 		for (int i = 0; i < prev_channels; i++)
@@ -1134,7 +1446,7 @@ void _adjust_w_layer(struct block *ablock) {
 	gsl_blas_dger(_net.alpha, ablock->epsilon, ablock->prev->tlayer, ablock->deltaw);
 	gsl_matrix_add(ablock->weights, ablock->deltaw);
 
-	printf("DeltaW mag %.10f\n", frobenius_norm(ablock->deltaw));
+	// printf("DeltaW mag %.10f\n", frobenius_norm(ablock->deltaw));
 
 	if (_logging)
 		ablock->deltaw_mags[0] = frobenius_norm(ablock->deltaw);
@@ -1159,6 +1471,46 @@ void _adjust_w_cnn(struct block *ablock) {
 
 	gsl_matrix_scale(ablock->deltaw, _net.alpha);
 	gsl_matrix_add(ablock->weights, ablock->deltaw);
+
+	// printf("DeltaW mag %.10f\n", frobenius_norm(ablock->deltaw));
+
+	if (_logging)
+		ablock->deltaw_mags[0] = frobenius_norm(ablock->deltaw);
+}
+
+void _accumulate_w_layer(struct block *ablock) {
+	// gsl_matrix_set_zero(ablock->deltaw);
+
+	activation_inplace(ablock->prev->layer, ablock->prev->tlayer, _net.act);
+
+	gsl_blas_dger(_net.alpha, ablock->epsilon, ablock->prev->tlayer, ablock->deltaw);
+	// gsl_matrix_add(ablock->weights, ablock->deltaw);
+
+	printf("DeltaW mag %.10f\n", frobenius_norm(ablock->deltaw));
+
+	if (_logging)
+		ablock->deltaw_mags[0] = frobenius_norm(ablock->deltaw);
+
+}
+
+void _accumulate_w_cnn(struct block *ablock) {
+	double mag = 0;
+	size_t prev_channels = ablock->prev->type == block_cnn ? ablock->prev->cnn->nchannels : 1;
+	// gsl_matrix_set_zero(ablock->deltaw);
+	for (int c1 = 0; c1 < ablock->cnn->nchannels; c1++) {
+		for (int c2 = 0; c2 < prev_channels; c2++) {
+			gsl_matrix_view dwview = gsl_matrix_submatrix(ablock->deltaw, 0, (c1*prev_channels + c2)*ablock->cnn->kernel_size, ablock->cnn->kernel_size, ablock->cnn->kernel_size);
+			for (int i = 0; i < ablock->cnn->image_length; i++) {
+				size_t true_i = gsl_vector_get(ablock->cnn->pool_indices, i);
+				gsl_matrix_view dadw = gsl_matrix_submatrix(ablock->cnn->dAdw[c1*prev_channels + c2], 0, true_i*ablock->cnn->kernel_size, ablock->cnn->kernel_size, ablock->cnn->kernel_size);
+				gsl_matrix_scale(&dadw.matrix, gsl_vector_get(ablock->epsilon, c1*ablock->cnn->image_length + i));
+				gsl_matrix_add(&dwview.matrix, &dadw.matrix);
+			}
+		}
+	}
+
+	// gsl_matrix_scale(ablock->deltaw, _net.alpha);
+	// gsl_matrix_add(ablock->weights, ablock->deltaw);
 
 	printf("DeltaW mag %.10f\n", frobenius_norm(ablock->deltaw));
 
@@ -1283,10 +1635,18 @@ void _downscale_layer(gsl_vector *out, gsl_vector *in, size_t **indices) {
 			// ret[index] = (2*i + maxi) * inp_size + (2*j + maxj);
 			// gsl_vector_set(indices, index, (2*i + maxi) * inp_size + (2*j + maxj));
 
-			indices[index][0] = 2*i*inp_size + 2*j;
-			indices[index][1] = 2*i*inp_size + 2*j +1;
-			indices[index][2] = (2*i + 1)*inp_size + 2*j;
-			indices[index][3] = (2*i + 1)*inp_size + 2*j + 1;
+			// indices[index][0] = 2*i*inp_size + 2*j;
+			// indices[index][1] = 2*i*inp_size + 2*j +1;
+			// indices[index][2] = (2*i + 1)*inp_size + 2*j;
+			// indices[index][3] = (2*i + 1)*inp_size + 2*j + 1;
+
+			if (indices) {
+				size_t *row = indices[index];
+				row[0] = 2*i*inp_size + 2*j;
+				row[1] = row[0] + 1;
+				row[2] = row[0] + inp_size;
+				row[3] = row[2] + 1;
+			}
 
 			double avg = mat_dot(&smview.matrix, kernel) / 4.0;
 
@@ -1310,32 +1670,38 @@ void _upscale_layer(gsl_vector *out, gsl_vector *in, size_t **indices) {
 	gsl_matrix_view pmview = gsl_matrix_submatrix(padded, 1, 1, out_size, out_size);
 	gsl_matrix_memcpy(&pmview.matrix, &omview.matrix);
 
-	for (int i = 0; i < in->size; i++)
-		gsl_vector_set(out, indices[i][0], gsl_vector_get(in, i));
-
 	for (int i = 0; i < in->size; i++) {
-		size_t oi = indices[i][1] / out_size + 1;
-		size_t oj = indices[i][1] % out_size + 1;
-		double newval = gsl_matrix_get(padded, oi, oj-1) + gsl_matrix_get(padded, oi, oj+1);
-		gsl_matrix_set(&omview.matrix, oi-1, oj-1, 0.5 * newval);
+		size_t *row = indices[i];
+		double val = gsl_vector_get(in, i) / 4.0;
 
-		oi = indices[i][2] / out_size + 1;
-		oj = indices[i][2] % out_size + 1;
-		newval = gsl_matrix_get(padded, oi-1, oj) + gsl_matrix_get(padded, oi+1, oj);
-		gsl_matrix_set(&omview.matrix, oi-1, oj-1, 0.5 * newval);
+		for (int j = 0; j < 4; j++)
+			gsl_vector_set(out, row[j], val);
+		// gsl_vector_set(out, indices[i][0], gsl_vector_get(in, i));
 	}
+
+	// for (int i = 0; i < in->size; i++) {
+	// 	size_t oi = indices[i][1] / out_size + 1;
+	// 	size_t oj = indices[i][1] % out_size + 1;
+	// 	double newval = gsl_matrix_get(padded, oi, oj-1) + gsl_matrix_get(padded, oi, oj+1);
+	// 	gsl_matrix_set(&omview.matrix, oi-1, oj-1, 0.5 * newval);
+
+	// 	oi = indices[i][2] / out_size + 1;
+	// 	oj = indices[i][2] % out_size + 1;
+	// 	newval = gsl_matrix_get(padded, oi-1, oj) + gsl_matrix_get(padded, oi+1, oj);
+	// 	gsl_matrix_set(&omview.matrix, oi-1, oj-1, 0.5 * newval);
+	// }
 	
-	for (int i = 0; i < in->size; i++) {
-		size_t oi = indices[i][3] / out_size + 1;
-		size_t oj = indices[i][3] % out_size + 1;
-		double newval = gsl_matrix_get(padded, oi, oj-1) + gsl_matrix_get(padded, oi-1, oj) + gsl_matrix_get(padded, oi, oj+1) + gsl_matrix_get(padded, oi+1, oj);
-		gsl_matrix_set(&omview.matrix, oi-1, oj-1, 0.25 * newval);
+	// for (int i = 0; i < in->size; i++) {
+	// 	size_t oi = indices[i][3] / out_size + 1;
+	// 	size_t oj = indices[i][3] % out_size + 1;
+	// 	double newval = gsl_matrix_get(padded, oi, oj-1) + gsl_matrix_get(padded, oi-1, oj) + gsl_matrix_get(padded, oi, oj+1) + gsl_matrix_get(padded, oi+1, oj);
+	// 	gsl_matrix_set(&omview.matrix, oi-1, oj-1, 0.25 * newval);
 
 
-		// gsl_vector_set(out, indices[i][1], (gsl_vector_get(in, i )));
-		// for (int j = 0; j < 4; j++)
-			// gsl_vector_set(out, indices[i][j], gsl_vector_get(in, i));
-	}
+	// 	// gsl_vector_set(out, indices[i][1], (gsl_vector_get(in, i )));
+	// 	// for (int j = 0; j < 4; j++)
+	// 		// gsl_vector_set(out, indices[i][j], gsl_vector_get(in, i));
+	// }
 
 }
 
@@ -1379,8 +1745,11 @@ void _build_coarse_net(struct network *net) {
 
 				for (int i = 0; i < rblock->weights->size1; i++) {
 					for (int j = 0; j < rblock->weights->size2; j++) {
-						double weight = gsl_matrix_get(cblock->weights, cblock->next ? rblock->amg_indices[i][0] : i, rblock->prev->amg_indices[j][0]);
-						gsl_matrix_set(rblock->weights, i, j, weight);
+						double weight = 0;
+						for (int k = 0; k < 4; k++)
+							weight += gsl_matrix_get(cblock->weights, cblock->next ? rblock->amg_indices[i][k] : i, rblock->prev->amg_indices[j][k]);
+						// double weight = gsl_matrix_get(cblock->weights, cblock->next ? rblock->amg_indices[i][0] : i, rblock->prev->amg_indices[j][0]);
+						gsl_matrix_set(rblock->weights, i, j, weight/4.0);
 					}
 				}
 			} else {

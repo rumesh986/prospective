@@ -67,6 +67,9 @@ int main(int argc, char **argv) {
 			set_network(train_params->net);
 			char netname[512];
 			sprintf(netname, "%s/%s.net", results_dir, config.operations[i].label);
+
+			time_t start = clock();
+
 			if (train_params->amg.depth == 1) {
 				struct traindata *train_data = train(*train_params, true);
 				// save_network(netname);
@@ -83,6 +86,10 @@ int main(int argc, char **argv) {
 					save_traindata(train_data[j], trainfile);
 				}
 			}
+
+			time_t end = clock();
+
+			printf("\n\nTime to train: %ld seconds\n\n", (end-start)/CLOCKS_PER_SEC);
 
 			printf("Saving network\n");
 			save_network(netname);
