@@ -2,7 +2,7 @@
 	"general": {
 		"logging": true,
 		"database": "mnist",
-		"label": "mlp2 10000",
+		"label": "mlp2 1000",
 		"results_dir": "tests/amg"
 	},
 	"blocks": [
@@ -100,54 +100,9 @@
 		{
 			"type": "training",
 			"training": {
-				"label": "mlp2_1",
-				"network": "mlp_network2",
-				"train_samples": 10000,
-				"seed": 0,
-				"test_samples_per_iter": 1,
-				"relaxation": "amg_relax",
-				"save": true,
-				"multigrid": {
-					"depth": 1
-				}
-			}
-		},
-		{
-			"type": "training",
-			"training": {
-				"label": "mlp2_2",
-				"network": "mlp_network2",
-				"train_samples": 10000,
-				"seed": 0,
-				"test_samples_per_iter": 1,
-				"relaxation": "amg_relax",
-				"save": true,
-				"multigrid": {
-					"depth": 2
-				}
-			}
-		},
-		{
-			"type": "training",
-			"training": {
-				"label": "mlp2_3",
-				"network": "mlp_network2",
-				"train_samples": 10000,
-				"seed": 0,
-				"test_samples_per_iter": 1,
-				"relaxation": "amg_relax",
-				"save": true,
-				"multigrid": {
-					"depth": 3
-				}
-			}
-		},
-		{
-			"type": "training",
-			"training": {
 				"label": "mlp2_4",
 				"network": "mlp_network2",
-				"train_samples": 10000,
+				"train_samples": 1000,
 				"seed": 0,
 				"test_samples_per_iter": 1,
 				"relaxation": "amg_relax",
@@ -158,30 +113,48 @@
 			}
 		},
 		{
-			"type": "testing",
-			"testing": {
-				"network": "mlp2_1",
-				"num_samples": 1000,
-				"relaxation": null,
-				"label": "mlp2_1"
+			"type": "training",
+			"training": {
+				"label": "mlp2_5",
+				"network": "mlp_network2",
+				"train_samples": 1000,
+				"seed": 0,
+				"test_samples_per_iter": 1,
+				"relaxation": "amg_relax",
+				"save": true,
+				"multigrid": {
+					"depth": 5
+				}
 			}
 		},
 		{
-			"type": "testing",
-			"testing": {
-				"network": "mlp2_2",
-				"num_samples": 1000,
-				"relaxation": null,
-				"label": "mlp2_2"
+			"type": "training",
+			"training": {
+				"label": "mlp2_6",
+				"network": "mlp_network2",
+				"train_samples": 1000,
+				"seed": 0,
+				"test_samples_per_iter": 1,
+				"relaxation": "amg_relax",
+				"save": true,
+				"multigrid": {
+					"depth": 6
+				}
 			}
 		},
 		{
-			"type": "testing",
-			"testing": {
-				"network": "mlp2_3",
-				"num_samples": 1000,
-				"relaxation": null,
-				"label": "mlp2_3"
+			"type": "training",
+			"training": {
+				"label": "mlp2_7",
+				"network": "mlp_network2",
+				"train_samples": 1000,
+				"seed": 0,
+				"test_samples_per_iter": 1,
+				"relaxation": "amg_relax",
+				"save": true,
+				"multigrid": {
+					"depth": 7
+				}
 			}
 		},
 		{
@@ -191,6 +164,33 @@
 				"num_samples": 1000,
 				"relaxation": null,
 				"label": "mlp2_4"
+			}
+		},
+		{
+			"type": "testing",
+			"testing": {
+				"network": "mlp2_5",
+				"num_samples": 1000,
+				"relaxation": null,
+				"label": "mlp2_5"
+			}
+		},
+		{
+			"type": "testing",
+			"testing": {
+				"network": "mlp2_6",
+				"num_samples": 1000,
+				"relaxation": null,
+				"label": "mlp2_6"
+			}
+		},
+		{
+			"type": "testing",
+			"testing": {
+				"network": "mlp2_7",
+				"num_samples": 1000,
+				"relaxation": null,
+				"label": "mlp2_7"
 			}
 		}
 	]

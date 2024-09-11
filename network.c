@@ -1159,7 +1159,7 @@ int _relaxation(bool training) {
 		energy = _calc_energies(iter);
 		double res = prev_energy - energy;
 		if (energy > 1e30) {
-			printf("WTF thats massive %d:  %e\n", iter, energy);
+			printf("Energy too high, exiting... %d:  %e\n", iter, energy);
 			raise(SIGABRT);
 			exit(100);
 		}
@@ -1291,7 +1291,7 @@ int _relaxation2(bool training, gsl_vector *inp, int target, int depth, int max_
 		energy = _calc_energies(iter);
 		double res = prev_energy - energy;
 		if (energy > 1e30) {
-			printf("WTF thats massive %d:  %e\n", iter, energy);
+			printf("Energy too high, exiting... %d:  %e\n", iter, energy);
 			raise(SIGABRT);
 			exit(100);
 		}
